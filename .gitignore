@@ -1,0 +1,37 @@
+# ---- Secrets -----------------------------------------------------------
+# .env holds the database connection string. It must never be committed.
+.env
+.env.*
+!.env.example
+
+# ---- Data --------------------------------------------------------------
+# Registry exports are large, republished weekly, and freely downloadable.
+# The database is the source of truth, not the repo.
+# Note: we ignore the *contents* of data/, not the directory itself.
+# `data/` alone would stop git descending into it and the negation below
+# could never take effect.
+data/*
+!data/raw/
+data/raw/*
+!data/raw/.gitkeep
+*.csv
+*.xls
+*.xlsx
+*.tsv
+
+# ---- Python ------------------------------------------------------------
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ---- Editors / OS ------------------------------------------------------
+.DS_Store
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,7 @@
+# Runtime dependencies
+psycopg[binary]>=3.1      # PostgreSQL driver. [binary] ships a prebuilt libpq,
+                          # so nobody has to install Postgres client libraries.
+python-dotenv>=1.0        # Reads DATABASE_URL out of the .env file
+
+# Development
+pytest>=8.0               # Test suite: `pytest`

@@ -108,6 +108,10 @@ class Result:
     redirected: bool = False
     elapsed_ms: int = 0
     detail: str = ""          # exception text, truncated
+    # Populated only when check_one(..., keep_text=True). Off by default so a
+    # reachability sweep does not hold hundreds of pages in memory, and so the
+    # results CSV stays small. scripts/tag_companies.py opts in.
+    page_text: str = ""
 
 
 def classify_exception(exc: BaseException) -> str:
@@ -163,7 +167,8 @@ def decode(body: bytes, response: httpx.Response) -> str:
 
 
 async def check_one(client: httpx.AsyncClient, sem: asyncio.Semaphore,
-                    cf: str, name: str, url: str) -> Result:
+                    cf: str, name: str, url: str,
+                    keep_text: bool = False) -> Result:
     """Try https, fall back to http, then classify."""
     result = Result(codice_fiscale=cf, denominazione=name, url_tried=url)
     started = datetime.datetime.now()
@@ -210,6 +215,8 @@ async def check_one(client: httpx.AsyncClient, sem: asyncio.Semaphore,
                 result.detail = f"parse:{type(exc).__name__}"
             result.text_chars = len(parser.text)
             result.title = " ".join(parser.title.split())[:120]
+            if keep_text:
+                result.page_text = parser.text
 
             if result.text_chars >= THIN_TEXT_CHARS:
                 result.bucket, result.reason = "OK", "ok"
@@ -320,12 +327,16 @@ def report(results: list[Result], total_eligible: int,
 
 def save_csv(results: list[Result], out_path: pathlib.Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fields = list(asdict(results[0]).keys())
+    # page_text is deliberately excluded: it would balloon the file and it is
+    # not what this measurement is about.
+    fields = [f for f in asdict(results[0]).keys() if f != "page_text"]
     with out_path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields)
         writer.writeheader()
         for r in sorted(results, key=lambda x: (x.bucket, -x.text_chars)):
-            writer.writerow(asdict(r))
+            row = asdict(r)
+            row.pop("page_text", None)
+            writer.writerow(row)
 
 
 def main() -> None:

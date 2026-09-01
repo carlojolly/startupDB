@@ -75,8 +75,14 @@ python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
+playwright install chromium    # one-off, ~95MB browser binary
+
 cp .env.example .env
 ```
+
+`playwright install chromium` downloads a browser that pip cannot install for
+you. It is needed by the tagging pipeline's second fetch pass (see below); the
+import and reachability scripts work without it.
 
 Open `.env` and paste your connection string after `DATABASE_URL=`.
 `.env` is git-ignored — never commit it.
@@ -273,6 +279,65 @@ ORDER BY observed_on DESC LIMIT 50;
 
 ---
 
+## Tagging companies
+
+The registry's own classification is too coarse to search on — 44% of the
+database is ATECO 621000, which cannot separate a B2B SaaS product from an IT
+consultancy. `scripts/tag_companies.py` reads each company's homepage and asks
+Claude for a specific sub-sector, business model, product type and one-line
+description.
+
+It needs `ANTHROPIC_API_KEY` in `.env` (create one at
+[console.anthropic.com](https://console.anthropic.com/settings/keys)). If your
+key is identity-linked rather than an organization key, also set
+`ANTHROPIC_WORKSPACE_ID` — the API returns a 400 telling you so.
+
+```bash
+python scripts/tag_companies.py --dry-run    # whole pipeline, no API calls, no cost
+python scripts/tag_companies.py              # 50 companies, writes to the database
+```
+
+### The homepage fetch runs in two passes
+
+Roughly a third of company homepages return HTTP 200 with almost no text —
+they are JavaScript shells that only assemble their content in a browser.
+
+1. **Pass 1** — plain HTTP for every company. Fast (~150ms per page) and
+   sufficient for about two thirds of them.
+2. **Pass 2** — any page yielding under 500 characters is re-fetched in
+   headless Chromium so its JavaScript runs. About 5.7x slower per page, which
+   is why it only runs on the pages pass 1 could not read.
+
+A page is only upgraded if rendering produced *more* text, so pass 2 can never
+make a result worse. `--no-render` skips it.
+
+Each tag records **`fetch_pass`** — `http`, `browser`, or `none` — which is
+what separates a JavaScript-rendered site from a genuinely empty one:
+
+```sql
+-- Companies whose website is readable only with JavaScript
+SELECT DISTINCT codice_fiscale FROM company_tags WHERE fetch_pass = 'browser';
+
+-- Companies with no usable website text at all
+SELECT DISTINCT codice_fiscale FROM company_tags WHERE fetch_pass = 'none';
+```
+
+Rendering cannot rescue every thin page. Many are genuinely empty: holding
+pages, sites under construction, or pages containing only marketing language
+with no product described. Those come back `unclear` by design — the prompt
+instructs the model to say so rather than guess from the company name.
+
+### Runs are versioned, not overwritten
+
+Every run writes a `tag_runs` row recording the model and `PROMPT_VERSION`, so
+a revised prompt can be compared against an earlier run instead of replacing
+it. Bump `PROMPT_VERSION` in `scripts/tag_companies.py` whenever you change the
+prompt or the schema.
+
+```bash
+python scripts/export_tags.py --run-id 4     # export any run to data/*.csv
+```
+
 ## Known data quirks
 
 The registry export is messier than it looks. The full findings are in
@@ -324,13 +389,18 @@ can fix it with SQL rather than re-importing.
 │   ├── 001_schema.sql        tables, constraints, indexes
 │   ├── 002_reference_data.sql the registry's legend as lookup tables
 │   ├── 003_views.sql         companies_current and friends
-│   └── 004_search_indexes.sql trigram indexes for name/town search
+│   ├── 004_search_indexes.sql trigram indexes for name/town search
+│   └── 005_tag_fetch_provenance.sql  which fetch pass produced each tag
 │
 ├── scripts/
 │   ├── db.py             # the one place that knows how to connect
 │   ├── init_db.py        # applies sql/
 │   ├── clean.py          # CSV string -> typed value. No database code.
-│   └── import_csv.py     # the weekly import
+│   ├── import_csv.py     # the weekly import
+│   ├── test_websites.py  # measures which company websites are reachable
+│   ├── render.py         # pass 2: headless-browser rendering
+│   ├── tag_companies.py  # LLM tagging pipeline
+│   └── export_tags.py    # export a tag run to CSV
 │
 ├── tests/
 │   └── test_clean.py     # runs without a database

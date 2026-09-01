@@ -29,7 +29,7 @@ COLUMNS = [
     # regardless of which prompt version produced the run; the column that
     # does not apply is simply blank.
     "confidence", "evidence_basis",
-    "website_url", "fetch_bucket", "homepage_chars",
+    "website_url", "fetch_pass", "fetch_bucket", "homepage_chars",
 ]
 
 # The evidence column is free text written by tag_companies.py in the shape
@@ -75,6 +75,7 @@ def main() -> None:
                    max(CASE WHEN t.tag_type = 'evidence_basis' THEN t.tag_value END),
                    max(t.confidence),
                    c.sito_internet_url,
+                   max(t.fetch_pass), max(t.fetch_bucket), max(t.homepage_chars),
                    max(t.evidence)
             FROM company_tags t
             JOIN companies_current c USING (codice_fiscale)
@@ -96,10 +97,17 @@ def main() -> None:
         writer = csv.writer(fh)
         writer.writerow(COLUMNS)
         for (cf, name, ateco, attivita, sector, bm, pt, one_line,
-             evidence_basis, confidence, url, evidence) in rows:
+             evidence_basis, confidence, url,
+             fetch_pass, fetch_bucket, homepage_chars, evidence) in rows:
+            # Runs 2-4 predate sql/005: their provenance lives only inside the
+            # free-text evidence string, so fall back to parsing it for those.
             evidence = evidence or ""
-            chars = _CHARS.search(evidence)
-            bucket = _BUCKET.search(evidence)
+            if fetch_bucket is None:
+                m = _BUCKET.search(evidence)
+                fetch_bucket = m.group(1) if m else ""
+            if homepage_chars is None:
+                m = _CHARS.search(evidence)
+                homepage_chars = m.group(1) if m else ""
             writer.writerow([
                 cf, name, ateco, attivita, sector, bm, pt, one_line,
                 # v2 stores no numeric confidence, so this is blank there.
@@ -107,8 +115,9 @@ def main() -> None:
                    else NUMERIC_TO_CONFIDENCE.get(float(confidence), confidence),
                 evidence_basis or "",
                 url,
-                bucket.group(1) if bucket else "",
-                chars.group(1) if chars else "",
+                fetch_pass or "",
+                fetch_bucket or "",
+                homepage_chars if homepage_chars is not None else "",
             ])
 
     model, prompt_version, finished_at, tagged = meta

@@ -5,13 +5,11 @@ python-dotenv>=1.0        # Reads DATABASE_URL out of the .env file
 httpx>=0.27               # Async HTTP client, used by scripts/test_websites.py
                           # to check which company websites are reachable
 anthropic>=1.0            # Claude API, used by scripts/tag_companies.py
+playwright>=1.40          # Pass 2 of the fetch pipeline: renders JavaScript-only
+                          # homepages that plain HTTP returns empty. Needs a
+                          # one-off browser download after pip install:
+                          #     playwright install chromium
 
 # Development
 pytest>=8.0               # Test suite: `pytest`
 
-# Optional — NOT installed by default.
-# scripts/probe_playwright.py needs a real browser to measure whether
-# JavaScript rendering rescues the THIN homepages. It is a one-off probe, not
-# part of the pipeline, and pulls a ~95MB Chromium binary. To run it:
-#     pip install playwright && playwright install chromium
-# playwright>=1.40

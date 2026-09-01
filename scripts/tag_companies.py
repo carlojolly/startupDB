@@ -21,6 +21,7 @@ import collections
 import datetime
 import random
 import sys
+from dataclasses import dataclass
 from typing import Literal
 
 import os
@@ -33,7 +34,8 @@ from pydantic import BaseModel, Field
 from db import connect, REPO_ROOT
 # Reuse the fetch logic that scripts/test_websites.py already proved out:
 # same https->http fallback, same text extraction, same OK/THIN/DEAD buckets.
-from test_websites import Result, check_one, USER_AGENT
+from test_websites import Result, check_one, USER_AGENT, THIN_TEXT_CHARS
+import render
 
 def make_client(async_client: bool = True):
     """Build an Anthropic client, honouring ANTHROPIC_WORKSPACE_ID.
@@ -219,8 +221,30 @@ def load_sample(size: int, seed: int, bias: float) -> tuple[list[tuple], dict]:
 # Phase 1 — fetch homepages
 # ---------------------------------------------------------------------------
 
-async def fetch_all(sample: list[tuple], concurrency: int,
-                    timeout: float) -> dict[str, Result]:
+@dataclass
+class Fetched:
+    """The homepage text for one company, and how we got it."""
+    codice_fiscale: str
+    url: str
+    text: str = ""
+    fetch_pass: str = "none"    # http | browser | none
+    fetch_bucket: str = "DEAD"  # OK | THIN | DEAD, after both passes
+    note: str = ""
+
+    @property
+    def chars(self) -> int:
+        return len(self.text)
+
+
+def _bucket(chars: int) -> str:
+    if chars >= THIN_TEXT_CHARS:
+        return "OK"
+    return "THIN" if chars > 0 else "DEAD"
+
+
+async def fetch_pass_one(sample: list[tuple], concurrency: int,
+                         timeout: float) -> dict[str, Result]:
+    """Fast plain-HTTP fetch for every company."""
     sem = asyncio.Semaphore(concurrency)
     async with httpx.AsyncClient(
         follow_redirects=True, max_redirects=5,
@@ -232,15 +256,66 @@ async def fetch_all(sample: list[tuple], concurrency: int,
     ) as client:
         tasks = [check_one(client, sem, cf, name, url, keep_text=True)
                  for cf, name, _att, _at, url, _com in sample]
-        done = 0
-        results = {}
+        done, results = 0, {}
         for coro in asyncio.as_completed(tasks):
             r = await coro
             results[r.codice_fiscale] = r
             done += 1
-            if done % 10 == 0 or done == len(tasks):
-                print(f"  fetched {done}/{len(tasks)}", flush=True)
+            if done % 25 == 0 or done == len(tasks):
+                print(f"    fetched {done}/{len(tasks)}", flush=True)
     return results
+
+
+async def fetch_all(sample: list[tuple], concurrency: int, timeout: float,
+                    render_concurrency: int = 4,
+                    use_browser: bool = True) -> dict[str, Fetched]:
+    """Two passes.
+
+    Pass 1 is plain HTTP for everything — fast and enough for ~2/3 of pages.
+    Pass 2 re-fetches anything that produced less than THIN_TEXT_CHARS in a
+    real browser, so JavaScript-rendered sites become readable. A page is only
+    upgraded if rendering actually produced MORE text, so pass 2 can never
+    make a result worse.
+
+    `fetch_pass` records which pass produced the text we kept, which is what
+    distinguishes a JS-rendered site ('browser') from a genuinely empty one
+    ('none').
+    """
+    print("  pass 1 — plain HTTP for all companies")
+    pass_one = await fetch_pass_one(sample, concurrency, timeout)
+
+    out: dict[str, Fetched] = {}
+    for cf, name, _att, _at, url, _com in sample:
+        r = pass_one.get(cf)
+        text = (r.page_text if r else "") or ""
+        out[cf] = Fetched(codice_fiscale=cf, url=url, text=text,
+                          fetch_pass="http" if text else "none",
+                          fetch_bucket=_bucket(len(text)),
+                          note=(r.reason if r else "not fetched"))
+
+    needs_render = [f for f in out.values() if f.chars < THIN_TEXT_CHARS]
+    if not use_browser:
+        print(f"  pass 2 — skipped (--no-render); {len(needs_render)} thin pages left as-is")
+        return out
+    if not needs_render:
+        print("  pass 2 — nothing to render")
+        return out
+
+    print(f"  pass 2 — rendering {len(needs_render)} thin/empty pages in a browser")
+    rendered = await render.render_many([f.url for f in needs_render],
+                                        concurrency=render_concurrency)
+    rescued = 0
+    for f in needs_render:
+        got = rendered.get(f.url)
+        if got and len(got.text) > f.chars:
+            f.text = got.text
+            f.fetch_pass = "browser"
+            f.fetch_bucket = _bucket(len(got.text))
+            f.note = got.note
+            if f.fetch_bucket == "OK":
+                rescued += 1
+    print(f"    {rescued} pages crossed the usable threshold thanks to rendering")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -249,14 +324,15 @@ async def fetch_all(sample: list[tuple], concurrency: int,
 
 class Tagged:
     def __init__(self, cf, name, attivita, url, tags, usage, error=None,
-                 page_chars=0, fetch_bucket=""):
+                 page_chars=0, fetch_bucket="", fetch_pass="none"):
         self.cf, self.name, self.attivita, self.url = cf, name, attivita, url
         self.tags, self.usage, self.error = tags, usage, error
         self.page_chars, self.fetch_bucket = page_chars, fetch_bucket
+        self.fetch_pass = fetch_pass
 
 
 async def tag_one(client, sem, cf, name, attivita, url, page_text,
-                  fetch_note, bucket) -> Tagged:
+                  fetch_note, bucket, fetch_pass) -> Tagged:
     if len(page_text) > LARGE_PAGE_WARN_CHARS:
         print(f"  ! {name[:30]} homepage is {len(page_text)} chars — sending in full "
               f"(fits the 200K context; not truncating)")
@@ -273,15 +349,17 @@ async def tag_one(client, sem, cf, name, attivita, url, page_text,
             )
             return Tagged(cf, name, attivita, url, response.parsed_output,
                           response.usage, page_chars=len(page_text),
-                          fetch_bucket=bucket)
+                          fetch_bucket=bucket, fetch_pass=fetch_pass)
         except anthropic.APIStatusError as exc:
             return Tagged(cf, name, attivita, url, None, None,
                           error=f"{type(exc).__name__}: {exc.message}",
-                          page_chars=len(page_text), fetch_bucket=bucket)
+                          page_chars=len(page_text), fetch_bucket=bucket,
+                          fetch_pass=fetch_pass)
         except Exception as exc:  # noqa: BLE001
             return Tagged(cf, name, attivita, url, None, None,
                           error=f"{type(exc).__name__}: {exc}",
-                          page_chars=len(page_text), fetch_bucket=bucket)
+                          page_chars=len(page_text), fetch_bucket=bucket,
+                          fetch_pass=fetch_pass)
 
 
 def stub_tags(name: str, bucket: str) -> CompanyTags:
@@ -300,22 +378,24 @@ async def tag_all(sample, fetched, concurrency, dry_run) -> list[Tagged]:
     if dry_run:
         out = []
         for cf, name, att, _at, url, _com in sample:
-            r = fetched.get(cf)
-            bucket = r.bucket if r else "DEAD"
+            f = fetched.get(cf)
+            bucket = f.fetch_bucket if f else "DEAD"
             out.append(Tagged(cf, name, att, url, stub_tags(name, bucket), None,
-                              page_chars=len(r.page_text) if r else 0,
-                              fetch_bucket=bucket))
+                              page_chars=f.chars if f else 0,
+                              fetch_bucket=bucket,
+                              fetch_pass=f.fetch_pass if f else "none"))
         return out
 
     client = make_client()
     sem = asyncio.Semaphore(concurrency)
     tasks = []
     for cf, name, att, _at, url, _com in sample:
-        r = fetched.get(cf)
-        text = (r.page_text if r else "") or ""
-        bucket = r.bucket if r else "DEAD"
-        note = f"{r.bucket}/{r.reason}" if r else "not fetched"
-        tasks.append(tag_one(client, sem, cf, name, att, url, text, note, bucket))
+        f = fetched.get(cf)
+        text = f.text if f else ""
+        bucket = f.fetch_bucket if f else "DEAD"
+        note = f"{bucket}/{f.note}" if f else "not fetched"
+        tasks.append(tag_one(client, sem, cf, name, att, url, text, note, bucket,
+                             f.fetch_pass if f else "none"))
 
     results, done = [], 0
     for coro in asyncio.as_completed(tasks):
@@ -344,7 +424,11 @@ def write_results(results: list[Tagged], dry_run: bool) -> int | None:
             "INSERT INTO tag_runs (model, prompt_version, notes) VALUES (%s, %s, %s) "
             "RETURNING id",
             (MODEL if not dry_run else f"{MODEL} (DRY RUN STUB)", PROMPT_VERSION,
-             f"{len(results)} companies sampled; {len(ok)} tagged successfully"),
+             f"{len(results)} companies sampled; {len(ok)} tagged successfully; "
+             f"two-pass fetch — "
+             f"{sum(1 for t in results if t.fetch_pass == 'http')} http, "
+             f"{sum(1 for t in results if t.fetch_pass == 'browser')} browser, "
+             f"{sum(1 for t in results if t.fetch_pass == 'none')} none"),
         )
         run_id = cur.fetchone()[0]
 
@@ -353,13 +437,15 @@ def write_results(results: list[Tagged], dry_run: bool) -> int | None:
             # v2 stores no numeric confidence: the model no longer emits one.
             # Trust is expressed by the evidence_basis tag row instead.
             evidence = (f"{t.url} | {t.page_chars} chars of homepage text "
-                        f"| fetch={t.fetch_bucket}")
+                        f"| fetch={t.fetch_bucket} | pass={t.fetch_pass}")
             for field in TAG_FIELDS:
                 rows.append((t.cf, run_id, field, getattr(t.tags, field),
-                             None, evidence, "llm"))
+                             None, evidence, "llm",
+                             t.fetch_pass, t.fetch_bucket, t.page_chars))
         cur.executemany(
             "INSERT INTO company_tags (codice_fiscale, run_id, tag_type, tag_value, "
-            "confidence, evidence, source) VALUES (%s,%s,%s,%s,%s,%s,%s) "
+            "confidence, evidence, source, fetch_pass, fetch_bucket, homepage_chars) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (codice_fiscale, run_id, tag_type, tag_value) DO NOTHING",
             rows,
         )
@@ -390,7 +476,7 @@ def print_table(results: list[Tagged]) -> None:
         g = t.tags
         print(f"     sector: {g.sector}")
         print(f"     model : {g.business_model:8} type: {g.product_type:14} "
-              f"fetch: {t.fetch_bucket} ({t.page_chars} chars)")
+              f"fetch: {t.fetch_bucket}/{t.fetch_pass} ({t.page_chars} chars)")
         print(f"     says  : {g.one_line}")
 
 
@@ -413,6 +499,12 @@ def print_summary(results: list[Tagged], stats: dict, elapsed: float) -> None:
         print(f"\n{label}:")
         for v, c in collections.Counter(getattr(t.tags, key) for t in ok).most_common():
             print(f"   {c:3}  {100*c/len(ok):5.1f}%  {v}")
+    print("\nfetch pass that produced the text:")
+    for v, c in collections.Counter(t.fetch_pass for t in results).most_common():
+        print(f"   {c:3}  {100*c/len(results):5.1f}%  {v}")
+    js = [t for t in results if t.fetch_pass == "browser"]
+    if js:
+        print(f"   -> {len(js)} JavaScript-rendered sites readable only via pass 2")
     unclear = sum(1 for t in ok if t.tags.sector.lower() == "unclear")
     print(f"\nsector == 'unclear': {unclear}/{len(ok)} ({100*unclear/max(len(ok),1):.0f}%)")
     print(f"distinct sectors    : {len({t.tags.sector.lower() for t in ok})} "
@@ -437,6 +529,11 @@ def main() -> None:
     p.add_argument("--bias", type=float, default=0.7,
                    help="Share of the sample drawn from ATECO 621000 (default 0.7)")
     p.add_argument("--fetch-concurrency", type=int, default=16)
+    p.add_argument("--render-concurrency", type=int, default=4,
+                   help="Concurrent browser pages in pass 2 (default 4)")
+    p.add_argument("--no-render", action="store_true",
+                   help="Skip pass 2 (the browser render). Faster, but "
+                        "JavaScript-only sites stay unreadable.")
     p.add_argument("--api-concurrency", type=int, default=8)
     p.add_argument("--timeout", type=float, default=8.0)
     p.add_argument("--dry-run", action="store_true",
@@ -449,10 +546,12 @@ def main() -> None:
           f"(of {stats['pool_621000']} in the pool), {stats['picked_other']} other\n")
 
     started = datetime.datetime.now()
-    print("Phase 1 — fetching homepages ...")
-    fetched = asyncio.run(fetch_all(sample, args.fetch_concurrency, args.timeout))
-    buckets = collections.Counter(r.bucket for r in fetched.values())
-    print(f"  {dict(buckets)}")
+    print("Phase 1 — fetching homepages (two passes) ...")
+    fetched = asyncio.run(fetch_all(sample, args.fetch_concurrency, args.timeout,
+                                    render_concurrency=args.render_concurrency,
+                                    use_browser=not args.no_render))
+    print(f"  final buckets: {dict(collections.Counter(f.fetch_bucket for f in fetched.values()))}")
+    print(f"  produced by  : {dict(collections.Counter(f.fetch_pass for f in fetched.values()))}")
 
     print(f"\nPhase 2 — tagging with {MODEL}"
           f"{' (DRY RUN — stub tags, no API calls)' if args.dry_run else ''} ...")

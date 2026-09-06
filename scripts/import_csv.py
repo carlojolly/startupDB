@@ -117,6 +117,20 @@ def read_and_clean(path: pathlib.Path) -> tuple[list[dict], Counter]:
     return cleaned_rows, stats
 
 
+def data_vintage(rows: list[dict]) -> datetime.date | None:
+    """The newest registration date in the file — the data's own vintage.
+
+    This is a far better `observed_on` than the file's mtime. The registry
+    export lags: a file downloaded on 30 August contained data only up to
+    14 August. mtime is also fragile — it records when the file was last
+    written to disk, so unzipping it, or copying it into data/raw/, resets it
+    to the time of that operation rather than anything about the data.
+    """
+    dates = [r["data_iscrizione_sezione_startup"] for r in rows
+             if r.get("data_iscrizione_sezione_startup")]
+    return max(dates) if dates else None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -148,19 +162,27 @@ def main() -> None:
     if not path.exists():
         raise SystemExit(f"File not found: {path}")
 
-    observed_on = (
-        datetime.date.fromisoformat(args.as_of) if args.as_of
-        else datetime.date.fromtimestamp(path.stat().st_mtime)
-    )
-
     print(f"File      : {path}")
-    print(f"As of     : {observed_on}  ({'--as-of' if args.as_of else 'file mtime'})")
     print("Fingerprinting ...", end=" ", flush=True)
     file_hash = sha256_of_file(path)
     print(file_hash[:16] + "...")
 
     print("Reading CSV ...")
     rows, stats = read_and_clean(path)
+
+    # Prefer the data's own vintage over any filesystem timestamp.
+    vintage = data_vintage(rows)
+    if args.as_of:
+        observed_on, source = datetime.date.fromisoformat(args.as_of), "--as-of"
+    elif vintage:
+        observed_on, source = vintage, "newest registration date in the file"
+    else:
+        observed_on, source = datetime.date.fromtimestamp(path.stat().st_mtime), "file mtime"
+    mtime_date = datetime.date.fromtimestamp(path.stat().st_mtime)
+    print(f"As of     : {observed_on}  ({source})")
+    if vintage and not args.as_of:
+        print(f"            file was last written {mtime_date}, "
+              f"so the export lags by {(mtime_date - vintage).days} days")
     print(f"  {stats['rows_in_file']} rows in file, {stats['rows_valid']} valid companies")
     if stats["skipped_blank"]:
         print(f"  {stats['skipped_blank']} blank rows skipped (spreadsheet padding)")
@@ -189,25 +211,46 @@ def main() -> None:
                     cur.execute("DELETE FROM company_snapshots WHERE import_id = %s", (existing[0],))
                     cur.execute("DELETE FROM imports WHERE id = %s", (existing[0],))
 
+                # --- 2b. Is this file older than what we already hold? -----------
+                # Delisting marks every company absent from THIS file as inactive.
+                # Running that with an older export would wrongly delist everything
+                # registered since. Checked before the import row is created so a
+                # refusal does not consume an id.
+                cur.execute("SELECT max(observed_on) FROM company_snapshots")
+                newest_held = cur.fetchone()[0]
+                if newest_held and observed_on < newest_held and not args.no_delist:
+                    raise SystemExit(
+                        f"\nREFUSING TO IMPORT: this file's data vintage is "
+                        f"{observed_on}, but the database already holds data as of "
+                        f"{newest_held}.\n"
+                        f"Delisting would mark every company registered since "
+                        f"{observed_on} as inactive.\n"
+                        f"If you meant to load an older file, re-run with --no-delist."
+                    )
+                if newest_held and observed_on == newest_held:
+                    print(f"  note: same data vintage ({observed_on}) as data already "
+                          f"held — the registry may not have refreshed since last time.")
+
                 # --- 2. Open the import record -----------------------------------
                 cur.execute(
                     """
                     INSERT INTO imports (source_filename, file_sha256, file_size_bytes,
-                                         file_modified_at, rows_in_file, rows_valid, rows_skipped)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                         file_modified_at, rows_in_file, rows_valid,
+                                         rows_skipped, data_vintage)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
                     (
                         path.name, file_hash, path.stat().st_size,
                         datetime.datetime.fromtimestamp(path.stat().st_mtime),
                         stats["rows_in_file"], stats["rows_valid"],
-                        stats["rows_in_file"] - stats["rows_valid"],
+                        stats["rows_in_file"] - stats["rows_valid"], vintage,
                     ),
                 )
                 import_id = cur.fetchone()[0]
                 print(f"\nImport id : {import_id}")
 
-                # --- 3. Make sure lookups cover everything in this file ----------
+            # --- 3. Make sure lookups cover everything in this file ----------
                 # Unknown province codes are inserted with a NULL region rather than
                 # failing the foreign key, so an unexpected code cannot break the
                 # weekly load. They show up in the warning below so you can fix them.

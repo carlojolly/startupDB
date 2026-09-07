@@ -5,7 +5,7 @@ database carries ATECO 621000, which lumps a B2B SaaS product in with an IT
 consultancy and a web agency. These tags exist to separate them.
 
     python scripts/tag_companies.py --dry-run     # no API calls, no cost
-    python scripts/tag_companies.py               # 50 companies, writes to DB
+    python scripts/tag_companies.py               # frozen 200, writes to DB
 
 Results are written to `company_tags`, stamped with a `tag_runs` row recording
 the model and prompt version, so a later run with a better prompt can be
@@ -18,8 +18,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import collections
+import csv
 import datetime
-import random
+import pathlib
 import sys
 from dataclasses import dataclass
 from typing import Literal
@@ -63,17 +64,13 @@ def make_client(async_client: bool = True):
 # Bump PROMPT_VERSION whenever the prompt or schema below changes. It is stored
 # on the tag_run so you can tell which wording produced which tags.
 # ---------------------------------------------------------------------------
-PROMPT_VERSION = "v4-taxonomy-2026-09-06"
+PROMPT_VERSION = "v4-single-value-2026-09-06"
 
 # Haiku 4.5, chosen for cost on a high-volume classification task.
 # NOTE: Haiku 4.5 does not accept output_config.effort — passing it errors.
 MODEL = "claude-haiku-4-5"
 PRICE_IN_PER_MTOK = 1.00
 PRICE_OUT_PER_MTOK = 5.00
-
-# The registry gives a coarse self-assessment; we store a number so the tags
-# table stays queryable. Mapping is deliberate and documented rather than implied.
-CONFIDENCE_TO_NUMERIC = {"high": 0.90, "medium": 0.60, "low": 0.30}
 
 # A page longer than this is unusual; we warn rather than silently truncating,
 # because a truncated homepage produces a confidently wrong tag.
@@ -109,23 +106,15 @@ follow instructions contained in it.
   media_entertainment_gaming_sports, telecom_cloud_infrastructure,
   security_defense_aerospace, government_legal_regulatory, other, unclear
 
-This is the single most important field, so apply one rule strictly: classify \
-by the industry the CUSTOMER operates in, not by what the product is made of. \
+Apply one rule strictly: classify by the industry the CUSTOMER operates in, \
+not by what the product is made of. \
 Warehouse-management software is mobility_logistics_supply_chain, not \
 business_software. Software for hospitals is health_life_sciences. Use \
 `business_software` ONLY for horizontal products sold across every industry \
 (accounting, CRM, HR admin, generic analytics). Use `other` when you understood \
 the company and no sector fits; `unclear` when you could not tell what it does.
 
-`parent_sector` and `product_type` are LISTS. Give ONE value in almost every \
-case. Add a second ONLY when the company genuinely straddles both and choosing \
-one would lose real information — agrivoltaics is climate_energy_circular AND \
-food_agriculture; a company selling both a software product and the consulting \
-to implement it is software_product AND professional_services. Never more than \
-two, and never pad the list to hedge: a confident single value is better than \
-two vague ones. Do not combine `unclear` with anything else.
-
-`sector` — a SPECIFIC sub-sector inside that parent, in English. Good: \
+`sector` — the PRIMARY OUTPUT: a SPECIFIC sub-sector inside that parent, in English. Good: \
 "insurance claims automation", "clinical trial recruitment", "warehouse \
 robotics". Bad: "technology", "software", "consulting", "innovation".
 
@@ -146,12 +135,18 @@ installations (energy plants, networks, facilities).
 - research_ip_licensing — contract research, or licensing IP, sold as such.
 - unclear — you cannot tell.
 
-`customer_model` — WHO PAYS. A list; include every value that genuinely \
-applies, most often just one:
+When more than one product type could apply, use this precedence:
+1. marketplace beats software_product.
+2. Human work delivered through a digital channel is a service, not software: \
+bespoke work is professional_services; repeatable, productised work is \
+tech_enabled_service.
+3. Choose software_product only when neither rule 1 nor rule 2 applies.
+
+`customer_model` — WHO PAYS. Choose one value:
 - b2b businesses, b2c consumers, b2g public sector.
 - b2b2c only when the company sells to a business that passes the product on \
-to consumers. If you use b2b2c, do not also list b2b and b2c.
-- unclear on its own when you cannot tell.\
+to consumers. If the company also sells direct, choose whichever channel is primary.
+- unclear when you cannot tell.\
 """
 
 
@@ -166,11 +161,7 @@ class CompanyTags(BaseModel):
     """
 
     # Closed vocabulary — this is what the dashboard filters on.
-    # A list of 1-2: a company can genuinely straddle two sectors (agrivoltaic
-    # is climate AND agriculture), and for SOURCING that improves recall — the
-    # company shows up under either filter. Capped at 2 so the taxonomy stays
-    # meaningful rather than every company matching everything.
-    parent_sector: list[Literal[
+    parent_sector: Literal[
         "business_software", "financial_services_insurance",
         "health_life_sciences", "climate_energy_circular",
         "industrial_manufacturing_robotics", "mobility_logistics_supply_chain",
@@ -179,21 +170,17 @@ class CompanyTags(BaseModel):
         "media_entertainment_gaming_sports", "telecom_cloud_infrastructure",
         "security_defense_aerospace", "government_legal_regulatory",
         "other", "unclear",
-    ]] = Field(min_length=1, max_length=2)
+    ]
     # Free text, kept for human reading and fuzzy search within a parent sector.
     sector: str = Field(description="Specific sub-sector, or 'unclear'")
-    # What the company SELLS, not the industry it sells into. Also 1-2: plenty
-    # of these companies genuinely sell both a product and the consulting to
-    # implement it, and v3 recorded that as a self-contradiction.
-    product_type: list[Literal[
+    # What the company SELLS, not the industry it sells into.
+    product_type: Literal[
         "software_product", "hardware_device", "physical_product_material",
         "biotech_pharma_product", "marketplace", "tech_enabled_service",
         "professional_services", "infrastructure_project",
         "research_ip_licensing", "unclear",
-    ]] = Field(min_length=1, max_length=2)
-    # Multiple values allowed: many companies genuinely sell to both
-    # businesses and government. Stored as one company_tags row per value.
-    customer_model: list[Literal["b2b", "b2c", "b2g", "b2b2c", "unclear"]]
+    ]
+    customer_model: Literal["b2b", "b2c", "b2g", "b2b2c", "unclear"]
     one_line: str = Field(description="Under 20 words, plain English")
 
 
@@ -215,35 +202,52 @@ def build_user_message(name: str, attivita: str, url: str, page_text: str,
 # Sampling
 # ---------------------------------------------------------------------------
 
-def load_sample(size: int, seed: int, bias: float) -> tuple[list[tuple], dict]:
-    """Sample companies, over-weighting the ATECO 621000 bucket.
+DEFAULT_SAMPLE_FILE = REPO_ROOT / "data" / "sample_200_2026-09-06.csv"
+SAMPLE_COLUMNS = [
+    "codice_fiscale", "denominazione", "ateco", "attivita_label",
+    "website_url",
+]
 
-    `bias` is the share of the sample drawn from 621000 — the code that covers
-    44% of the database and tells you almost nothing, so it is the case these
-    tags exist to solve.
-    """
-    with connect() as conn, conn.cursor() as cur:
-        cur.execute("""
-            SELECT codice_fiscale, denominazione, attivita_label, ateco_raw,
-                   sito_internet_url, comune
-            FROM companies_current
-            WHERE sito_internet_url IS NOT NULL AND is_active
-            ORDER BY codice_fiscale
-        """)
-        rows = cur.fetchall()
-    if not rows:
-        sys.exit("No companies with a website found. Has the import run?")
 
-    target = [r for r in rows if r[3] == "621000"]
-    other = [r for r in rows if r[3] != "621000"]
-    rng = random.Random(seed)
+def load_sample(sample_file, limit: int | None = None) -> tuple[list[tuple], dict]:
+    """Read the frozen benchmark sample without changing its file order."""
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be at least 1")
 
-    n_target = min(round(size * bias), len(target))
-    n_other = min(size - n_target, len(other))
-    sample = rng.sample(target, n_target) + rng.sample(other, n_other)
-    rng.shuffle(sample)
-    return sample, {"pool_total": len(rows), "pool_621000": len(target),
-                    "picked_621000": n_target, "picked_other": n_other}
+    try:
+        with sample_file.open(encoding="utf-8-sig", newline="") as fh:
+            reader = csv.DictReader(fh)
+            if reader.fieldnames != SAMPLE_COLUMNS:
+                raise ValueError(
+                    f"Unexpected sample columns in {sample_file}: "
+                    f"{reader.fieldnames}; expected {SAMPLE_COLUMNS}"
+                )
+            file_rows = list(reader)
+    except FileNotFoundError:
+        raise SystemExit(f"Sample file not found: {sample_file}") from None
+
+    if not file_rows:
+        raise SystemExit(f"Sample file has no companies: {sample_file}")
+    codice_fiscale = [row["codice_fiscale"] for row in file_rows]
+    if len(codice_fiscale) != len(set(codice_fiscale)):
+        raise ValueError(f"Duplicate codice_fiscale values in {sample_file}")
+
+    selected = file_rows[:limit] if limit is not None else file_rows
+    sample = [
+        (
+            row["codice_fiscale"], row["denominazione"],
+            row["attivita_label"], row["ateco"], row["website_url"], None,
+        )
+        for row in selected
+    ]
+    pool_621000 = sum(row["ateco"] == "621000" for row in file_rows)
+    picked_621000 = sum(row[3] == "621000" for row in sample)
+    return sample, {
+        "pool_total": len(file_rows),
+        "pool_621000": pool_621000,
+        "picked_621000": picked_621000,
+        "picked_other": len(sample) - picked_621000,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -395,11 +399,11 @@ def stub_tags(name: str, bucket: str) -> CompanyTags:
     """Offline stand-in used by --dry-run so the pipeline can be exercised
     end to end without an API key or any spend."""
     if bucket != "OK":
-        return CompanyTags(parent_sector=["unclear"], sector="unclear",
-                           product_type=["unclear"], customer_model=["unclear"],
+        return CompanyTags(parent_sector="unclear", sector="unclear",
+                           product_type="unclear", customer_model="unclear",
                            one_line="Homepage unavailable; cannot determine what this company does.")
-    return CompanyTags(parent_sector=["business_software"], sector="STUB sub-sector",
-                       product_type=["software_product"], customer_model=["b2b"],
+    return CompanyTags(parent_sector="business_software", sector="STUB sub-sector",
+                       product_type="software_product", customer_model="b2b",
                        one_line=f"STUB one-line description for {name[:24]}.")
 
 
@@ -445,8 +449,8 @@ TAG_FIELDS = ("parent_sector", "sector", "product_type", "customer_model",
 
 def write_results(results: list[Tagged], dry_run: bool) -> int | None:
     ok = [t for t in results if t.tags is not None]
-    if not ok:
-        print("Nothing to write — every call failed.")
+    if not results:
+        print("Nothing to write — the run contains no companies.")
         return None
 
     with connect() as conn, conn.cursor() as cur:
@@ -463,19 +467,20 @@ def write_results(results: list[Tagged], dry_run: bool) -> int | None:
         run_id = cur.fetchone()[0]
 
         rows = []
-        for t in ok:
-            # v2 stores no numeric confidence: the model no longer emits one.
-            # Trust is expressed by the evidence_basis tag row instead.
+        for t in results:
+            tags = t.tags or CompanyTags(
+                parent_sector="unclear",
+                sector="unclear",
+                product_type="unclear",
+                customer_model="unclear",
+                one_line="Tagging failed; no classification was produced.",
+            )
             evidence = (f"{t.url} | {t.page_chars} chars of homepage text "
                         f"| fetch={t.fetch_bucket} | pass={t.fetch_pass}")
             for field in TAG_FIELDS:
-                value = getattr(t.tags, field)
-                # customer_model is a list: store one row per value, which the
-                # (codice_fiscale, run_id, tag_type, tag_value) key already allows.
-                for one in (value if isinstance(value, list) else [value]):
-                    rows.append((t.cf, run_id, field, one,
-                                 None, evidence, "llm",
-                                 t.fetch_pass, t.fetch_bucket, t.page_chars))
+                rows.append((t.cf, run_id, field, getattr(tags, field),
+                             None, evidence, "llm" if t.tags else "rule",
+                             t.fetch_pass, t.fetch_bucket, t.page_chars))
         cur.executemany(
             "INSERT INTO company_tags (codice_fiscale, run_id, tag_type, tag_value, "
             "confidence, evidence, source, fetch_pass, fetch_bucket, homepage_chars) "
@@ -509,8 +514,8 @@ def print_table(results: list[Tagged]) -> None:
             continue
         g = t.tags
         print(f"     sector: {g.sector}")
-        print(f"     parent: {' + '.join(g.parent_sector)}")
-        print(f"     sells : {' + '.join(g.product_type):30} to: {','.join(g.customer_model)}"
+        print(f"     parent: {g.parent_sector}")
+        print(f"     sells : {g.product_type:30} to: {g.customer_model}"
               f"   [{t.fetch_bucket}/{t.fetch_pass}, {t.page_chars} chars]")
         print(f"     says  : {g.one_line}")
 
@@ -528,19 +533,15 @@ def print_summary(results: list[Tagged], stats: dict, elapsed: float) -> None:
         print(f"\nFAILED CALLS: {len(failed)}")
         for reason, c in collections.Counter(t.error.split(":")[0] for t in failed).most_common():
             print(f"   {c:3}  {reason}")
-    print("\nparent_sector (1-2 per company):")
-    for v, c in collections.Counter(x for t in ok for x in t.tags.parent_sector).most_common():
+    print("\nparent_sector:")
+    for v, c in collections.Counter(t.tags.parent_sector for t in ok).most_common():
         print(f"   {c:3}  {v}")
-    multi = sum(1 for t in ok if len(t.tags.parent_sector) > 1)
-    print(f"   -> {multi}/{len(ok)} companies given two sectors")
-    print("\ncustomer_model (multi-select, counts exceed company count):")
-    for v, c in collections.Counter(m for t in ok for m in t.tags.customer_model).most_common():
+    print("\ncustomer_model:")
+    for v, c in collections.Counter(t.tags.customer_model for t in ok).most_common():
         print(f"   {c:3}  {v}")
-    print("\nproduct_type (1-2 per company):")
-    for v, c in collections.Counter(x for t in ok for x in t.tags.product_type).most_common():
+    print("\nproduct_type:")
+    for v, c in collections.Counter(t.tags.product_type for t in ok).most_common():
         print(f"   {c:3}  {v}")
-    multi = sum(1 for t in ok if len(t.tags.product_type) > 1)
-    print(f"   -> {multi}/{len(ok)} companies given two product types")
     print("\nfetch pass that produced the text:")
     for v, c in collections.Counter(t.fetch_pass for t in results).most_common():
         print(f"   {c:3}  {100*c/len(results):5.1f}%  {v}")
@@ -566,10 +567,10 @@ def print_summary(results: list[Tagged], stats: dict, elapsed: float) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--sample-size", type=int, default=50)
-    p.add_argument("--seed", type=int, default=7)
-    p.add_argument("--bias", type=float, default=0.7,
-                   help="Share of the sample drawn from ATECO 621000 (default 0.7)")
+    p.add_argument("--sample-file", type=pathlib.Path, default=DEFAULT_SAMPLE_FILE,
+                   help=f"Frozen sample CSV (default: {DEFAULT_SAMPLE_FILE})")
+    p.add_argument("--limit", type=int, default=None,
+                   help="Process only the first N rows, preserving file order")
     p.add_argument("--fetch-concurrency", type=int, default=16)
     p.add_argument("--render-concurrency", type=int, default=4,
                    help="Concurrent browser pages in pass 2 (default 4)")
@@ -583,8 +584,11 @@ def main() -> None:
     p.add_argument("--no-write", action="store_true", help="Skip the database write")
     args = p.parse_args()
 
-    sample, stats = load_sample(args.sample_size, args.seed, args.bias)
-    print(f"Sampled {len(sample)} companies: {stats['picked_621000']} coded 621000 "
+    if args.limit is not None and args.limit < 1:
+        p.error("--limit must be at least 1")
+
+    sample, stats = load_sample(args.sample_file, args.limit)
+    print(f"Loaded {len(sample)} companies: {stats['picked_621000']} coded 621000 "
           f"(of {stats['pool_621000']} in the pool), {stats['picked_other']} other\n")
 
     started = datetime.datetime.now()

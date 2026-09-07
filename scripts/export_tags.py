@@ -1,10 +1,12 @@
-"""Export one tagging run to a CSV for reading through by hand.
+"""Export one tagging run using the v4 bake-off CSV contract.
 
-    python scripts/export_tags.py                 # newest finished run
-    python scripts/export_tags.py --run-id 2
+    python scripts/export_tags.py                 # newest run, Codex filename
+    python scripts/export_tags.py --run-id 7
+    python scripts/export_tags.py --run-id 7 --tool claudecode
 
-Writes to data/ (git-ignored). One row per company, with the four tag types
-pivoted into columns so the file opens sensibly in a spreadsheet.
+Writes to data/ (git-ignored). The output has exactly the columns, ordering,
+encoding, line endings, and 200-company row count required by
+docs/tagging-contract-v4.md.
 """
 from __future__ import annotations
 
@@ -15,28 +17,74 @@ import pathlib
 import re
 
 from db import connect, REPO_ROOT
-from tag_companies import CONFIDENCE_TO_NUMERIC
 
-# Invert the mapping tag_companies.py used when writing, so the CSV shows the
-# label the model actually produced rather than the numeric we store.
-NUMERIC_TO_CONFIDENCE = {v: k for k, v in CONFIDENCE_TO_NUMERIC.items()}
 
 COLUMNS = [
     "codice_fiscale", "denominazione", "ateco", "attivita_label",
-    "sector", "business_model", "product_type", "one_line",
-    # v1 runs carry `confidence`; v2 onwards carry `evidence_basis` instead.
-    # Both columns are emitted for every run so one file shape opens in Excel
-    # regardless of which prompt version produced the run; the column that
-    # does not apply is simply blank.
-    "confidence", "evidence_basis",
-    "website_url", "fetch_pass", "fetch_bucket", "homepage_chars",
+    "website_url", "parent_sector", "sector", "product_type",
+    "customer_model", "one_line", "fetch_pass", "fetch_bucket",
+    "homepage_chars",
 ]
 
-# The evidence column is free text written by tag_companies.py in the shape
-#   "<url> | <n> chars of homepage text | fetch=<bucket>"
-# so these two patterns are tied to that writer. If it changes, change these.
+CONTRACT_ROW_COUNT = 200
+
+# New runs have dedicated provenance columns. For runs written before sql/005,
+# recover the same values from the evidence string:
+#   "<url> | <n> chars of homepage text | fetch=<bucket> | pass=<pass>"
+_URL = re.compile(r"^(.*?)\s*\|\s*\d+\s+chars")
 _CHARS = re.compile(r"\|\s*(\d+) chars")
 _BUCKET = re.compile(r"fetch=(\w+)")
+_PASS = re.compile(r"pass=(\w+)")
+
+
+def _provenance(current_url, fetch_pass, fetch_bucket, homepage_chars,
+                evidence) -> tuple[str, str, str, int]:
+    """Return complete, contract-valid fetch provenance for one company."""
+    evidence = evidence or ""
+
+    match = _URL.search(evidence)
+    website_url = match.group(1).strip() if match else (current_url or "")
+
+    if homepage_chars is None:
+        match = _CHARS.search(evidence)
+        homepage_chars = int(match.group(1)) if match else 0
+    else:
+        homepage_chars = int(homepage_chars)
+
+    if not fetch_bucket:
+        match = _BUCKET.search(evidence)
+        if match:
+            fetch_bucket = match.group(1)
+        elif homepage_chars == 0:
+            fetch_bucket = "DEAD"
+        elif homepage_chars < 500:
+            fetch_bucket = "THIN"
+        else:
+            fetch_bucket = "OK"
+
+    if not fetch_pass:
+        match = _PASS.search(evidence)
+        fetch_pass = match.group(1) if match else (
+            "http" if homepage_chars else "none"
+        )
+
+    return website_url, fetch_pass, fetch_bucket, homepage_chars
+
+
+def _write_csv(path: pathlib.Path, rows: list[list[object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8-sig", newline="") as fh:
+        writer = csv.writer(fh, lineterminator="\n")
+        writer.writerow(COLUMNS)
+        writer.writerows(rows)
+
+
+def _require_contract_row_count(rows, run_id: int) -> None:
+    if len(rows) != CONTRACT_ROW_COUNT:
+        raise SystemExit(
+            f"tag_run {run_id} contains {len(rows)} companies; the contract "
+            f"requires exactly {CONTRACT_ROW_COUNT}. No file was written."
+        )
 
 
 def main() -> None:
@@ -44,15 +92,20 @@ def main() -> None:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--run-id", type=int, default=None,
                         help="Which tag_run to export (default: the newest)")
+    parser.add_argument("--tool", default="codex",
+                        help="Tool name used in the contract filename (default: codex)")
     parser.add_argument("--out", type=pathlib.Path, default=None)
     args = parser.parse_args()
 
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", args.tool):
+        raise SystemExit("--tool must contain only lowercase letters, digits, _ or -.")
+
     with connect() as conn, conn.cursor() as cur:
         if args.run_id is None:
-            cur.execute("SELECT max(id) FROM tag_runs")
+            cur.execute("SELECT max(id) FROM tag_runs WHERE finished_at IS NOT NULL")
             row = cur.fetchone()
             if not row or row[0] is None:
-                raise SystemExit("No tag runs found. Run scripts/tag_companies.py first.")
+                raise SystemExit("No finished tag runs found. Run scripts/tag_companies.py first.")
             run_id = row[0]
         else:
             run_id = args.run_id
@@ -68,61 +121,82 @@ def main() -> None:
                    c.denominazione,
                    c.ateco_raw,
                    c.attivita_label,
-                   max(CASE WHEN t.tag_type = 'sector'         THEN t.tag_value END),
-                   max(CASE WHEN t.tag_type = 'business_model' THEN t.tag_value END),
-                   max(CASE WHEN t.tag_type = 'product_type'   THEN t.tag_value END),
-                   max(CASE WHEN t.tag_type = 'one_line'       THEN t.tag_value END),
-                   max(CASE WHEN t.tag_type = 'evidence_basis' THEN t.tag_value END),
-                   max(t.confidence),
                    c.sito_internet_url,
-                   max(t.fetch_pass), max(t.fetch_bucket), max(t.homepage_chars),
+                   max(CASE WHEN t.tag_type = 'parent_sector'  THEN t.tag_value END),
+                   max(CASE WHEN t.tag_type = 'sector'         THEN t.tag_value END),
+                   max(CASE WHEN t.tag_type = 'product_type'   THEN t.tag_value END),
+                   max(CASE WHEN t.tag_type = 'customer_model' THEN t.tag_value END),
+                   max(CASE WHEN t.tag_type = 'business_model' THEN t.tag_value END),
+                   max(CASE WHEN t.tag_type = 'one_line'       THEN t.tag_value END),
+                   count(DISTINCT CASE WHEN t.tag_type = 'parent_sector'
+                                       THEN t.tag_value END),
+                   count(DISTINCT CASE WHEN t.tag_type = 'sector'
+                                       THEN t.tag_value END),
+                   count(DISTINCT CASE WHEN t.tag_type = 'product_type'
+                                       THEN t.tag_value END),
+                   count(DISTINCT CASE WHEN t.tag_type = 'customer_model'
+                                       THEN t.tag_value END),
+                   count(DISTINCT CASE WHEN t.tag_type = 'one_line'
+                                       THEN t.tag_value END),
+                   max(t.fetch_pass),
+                   max(t.fetch_bucket),
+                   max(t.homepage_chars),
                    max(t.evidence)
             FROM company_tags t
             JOIN companies_current c USING (codice_fiscale)
             WHERE t.run_id = %s
             GROUP BY c.codice_fiscale, c.denominazione, c.ateco_raw,
                      c.attivita_label, c.sito_internet_url
-            ORDER BY c.denominazione
+            ORDER BY c.codice_fiscale ASC
         """, (run_id,))
-        rows = cur.fetchall()
+        db_rows = cur.fetchall()
 
-    if not rows:
-        raise SystemExit(f"tag_run {run_id} has no tags attached to it.")
+    _require_contract_row_count(db_rows, run_id)
 
-    out = args.out or (REPO_ROOT / "data" /
-                       f"tags_run{run_id}_{datetime.date.today():%Y-%m-%d}.csv")
-    out.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for (cf, name, ateco, attivita, current_url, parent_sector, sector,
+         product_type, customer_model, legacy_business_model, one_line,
+         parent_count, sector_count, product_count, customer_count,
+         one_line_count, fetch_pass, fetch_bucket, homepage_chars,
+         evidence) in db_rows:
+        counts = {
+            "parent_sector": parent_count,
+            "sector": sector_count,
+            "product_type": product_count,
+            "customer_model": customer_count,
+            "one_line": one_line_count,
+        }
+        repeated = [field for field, count in counts.items() if count > 1]
+        if repeated:
+            raise SystemExit(
+                f"tag_run {run_id}, company {cf}, has multiple values for "
+                f"{', '.join(repeated)}; the v4 contract requires single values. "
+                "No file was written."
+            )
 
-    with out.open("w", encoding="utf-8-sig", newline="") as fh:
-        writer = csv.writer(fh)
-        writer.writerow(COLUMNS)
-        for (cf, name, ateco, attivita, sector, bm, pt, one_line,
-             evidence_basis, confidence, url,
-             fetch_pass, fetch_bucket, homepage_chars, evidence) in rows:
-            # Runs 2-4 predate sql/005: their provenance lives only inside the
-            # free-text evidence string, so fall back to parsing it for those.
-            evidence = evidence or ""
-            if fetch_bucket is None:
-                m = _BUCKET.search(evidence)
-                fetch_bucket = m.group(1) if m else ""
-            if homepage_chars is None:
-                m = _CHARS.search(evidence)
-                homepage_chars = m.group(1) if m else ""
-            writer.writerow([
-                cf, name, ateco, attivita, sector, bm, pt, one_line,
-                # v2 stores no numeric confidence, so this is blank there.
-                "" if confidence is None
-                   else NUMERIC_TO_CONFIDENCE.get(float(confidence), confidence),
-                evidence_basis or "",
-                url,
-                fetch_pass or "",
-                fetch_bucket or "",
-                homepage_chars if homepage_chars is not None else "",
-            ])
+        website_url, fetch_pass, fetch_bucket, homepage_chars = _provenance(
+            current_url, fetch_pass, fetch_bucket, homepage_chars, evidence
+        )
+        rows.append([
+            str(cf), name, ateco, attivita, website_url,
+            parent_sector or "unclear",
+            sector or "unclear",
+            product_type or "unclear",
+            customer_model or legacy_business_model or "unclear",
+            one_line or "Tagging failed; no classification was produced.",
+            fetch_pass, fetch_bucket, homepage_chars,
+        ])
+
+    out = args.out or (
+        REPO_ROOT / "data" /
+        f"tags_{args.tool}_r{run_id}_{datetime.date.today():%Y-%m-%d}.csv"
+    )
+    _write_csv(out, rows)
 
     model, prompt_version, finished_at, tagged = meta
+    finished = finished_at.strftime("%Y-%m-%d %H:%M") if finished_at else "unfinished"
     print(f"tag_run {run_id}: model={model} prompt={prompt_version} "
-          f"finished={finished_at:%Y-%m-%d %H:%M} companies={tagged}")
+          f"finished={finished} companies_tagged={tagged}")
     print(f"Wrote {len(rows)} rows x {len(COLUMNS)} columns")
     print(f"\n{out}")
 

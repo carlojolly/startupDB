@@ -1,12 +1,12 @@
-"""Build the frozen 200-company benchmark sample from the registry CSV.
+"""Build the frozen benchmark and held-out development samples.
 
-The seed is intentionally fixed at 20260906, matching the sample freeze date.
-Once generated, both tagging pipelines must use the same committed CSV rather
-than drawing their own samples.
+Both seeds are fixed to their sample freeze dates. Once generated, both tagging
+pipelines must use these committed CSVs rather than drawing their own samples.
 """
 from __future__ import annotations
 
 import csv
+import hashlib
 import random
 from pathlib import Path
 
@@ -15,8 +15,10 @@ from clean import clean_website
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SOURCE = REPO_ROOT / "data" / "raw" / "startup_2026-08-30.csv"
-OUTPUT = REPO_ROOT / "data" / "sample_200_2026-09-06.csv"
-SEED = 20260906
+SAMPLE_OUTPUT = REPO_ROOT / "data" / "sample_200_2026-09-06.csv"
+DEVSET_OUTPUT = REPO_ROOT / "data" / "devset_40_2026-09-07.csv"
+SAMPLE_SEED = 20260906
+DEVSET_SEED = 20260907
 
 OUTPUT_COLUMNS = [
     "codice_fiscale",
@@ -49,7 +51,10 @@ def read_source() -> list[dict[str, str]]:
         return list(csv.DictReader(fh))
 
 
-def build_sample(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+def eligible_companies(
+    rows: list[dict[str, str]],
+) -> dict[str, tuple[dict[str, str], str]]:
+    """Return source rows keyed by codice fiscale with normalized URLs."""
     eligible = {}
     for row in rows:
         cf = row["codice fiscale"].strip()
@@ -66,33 +71,53 @@ def build_sample(rows: list[dict[str, str]]) -> list[dict[str, str]]:
             f"Expected 9,620 eligible companies split 4,259/5,361; got "
             f"{len(eligible)} split {eligible_target}/{len(eligible) - eligible_target}"
         )
+    return eligible
 
-    frozen = set(FROZEN_50)
 
-    missing = sorted(frozen - eligible.keys())
+def draw_stratified(
+    eligible: dict[str, tuple[dict[str, str], str]],
+    *,
+    target_count: int,
+    other_count: int,
+    seed: int,
+    include: set[str] | frozenset[str] = frozenset(),
+    exclude: set[str] | frozenset[str] = frozenset(),
+) -> list[dict[str, str]]:
+    """Draw a deterministic 621000/other sample and return it sorted by CF."""
+    included = set(include)
+    excluded = set(exclude)
+    if included & excluded:
+        raise ValueError("Included companies cannot also be excluded")
+
+    missing = sorted(included - eligible.keys())
     if missing:
-        raise ValueError(f"Frozen companies missing or ineligible: {missing}")
+        raise ValueError(f"Included companies missing or ineligible: {missing}")
 
-    frozen_target = sum(eligible[cf][0]["ateco 2007"].strip() == "621000"
-                        for cf in frozen)
-    if frozen_target != 35:
-        raise ValueError(
-            f"Expected frozen 50 to split 35/15 by ATECO; got "
-            f"{frozen_target}/{50 - frozen_target}"
-        )
+    included_target = sum(
+        eligible[cf][0]["ateco 2007"].strip() == "621000" for cf in included
+    )
+    included_other = len(included) - included_target
+    draw_target = target_count - included_target
+    draw_other = other_count - included_other
+    if draw_target < 0 or draw_other < 0:
+        raise ValueError("Included companies exceed the requested stratum counts")
 
     target_pool = sorted(
         cf for cf, (row, _website_url) in eligible.items()
-        if cf not in frozen and row["ateco 2007"].strip() == "621000"
+        if cf not in included | excluded
+        and row["ateco 2007"].strip() == "621000"
     )
     other_pool = sorted(
         cf for cf, (row, _website_url) in eligible.items()
-        if cf not in frozen and row["ateco 2007"].strip() != "621000"
+        if cf not in included | excluded
+        and row["ateco 2007"].strip() != "621000"
     )
+    if len(target_pool) < draw_target or len(other_pool) < draw_other:
+        raise ValueError("Not enough eligible companies for the requested draw")
 
-    rng = random.Random(SEED)
-    selected = frozen | set(rng.sample(target_pool, 105))
-    selected |= set(rng.sample(other_pool, 45))
+    rng = random.Random(seed)
+    selected = included | set(rng.sample(target_pool, draw_target))
+    selected |= set(rng.sample(other_pool, draw_other))
 
     sample = []
     for cf in sorted(selected):
@@ -105,18 +130,31 @@ def build_sample(rows: list[dict[str, str]]) -> list[dict[str, str]]:
             "website_url": website_url,
         })
 
-    target_count = sum(row["ateco"].strip() == "621000" for row in sample)
-    if len(sample) != 200 or target_count != 140:
+    actual_target = sum(row["ateco"].strip() == "621000" for row in sample)
+    expected_total = target_count + other_count
+    if len(sample) != expected_total or actual_target != target_count:
         raise ValueError(
-            f"Expected 200 companies split 140/60; got "
-            f"{len(sample)} split {target_count}/{len(sample) - target_count}"
+            f"Expected {expected_total} companies split "
+            f"{target_count}/{other_count}; got "
+            f"{len(sample)} split {actual_target}/{len(sample) - actual_target}"
         )
     return sample
 
 
-def write_sample(rows: list[dict[str, str]]) -> None:
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    with OUTPUT.open("w", encoding="utf-8-sig", newline="") as fh:
+def build_sample(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Build the scored 200-company sample; retained as the public entry point."""
+    return draw_stratified(
+        eligible_companies(rows),
+        target_count=140,
+        other_count=60,
+        seed=SAMPLE_SEED,
+        include=set(FROZEN_50),
+    )
+
+
+def write_sample(rows: list[dict[str, str]], output: Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.DictWriter(
             fh,
             fieldnames=OUTPUT_COLUMNS,
@@ -127,19 +165,39 @@ def write_sample(rows: list[dict[str, str]]) -> None:
         writer.writerows(rows)
 
 
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def main() -> None:
     source_rows = read_source()
-    sample = build_sample(source_rows)
-    write_sample(sample)
+    eligible = eligible_companies(source_rows)
+    sample = draw_stratified(
+        eligible,
+        target_count=140,
+        other_count=60,
+        seed=SAMPLE_SEED,
+        include=set(FROZEN_50),
+    )
+    sample_ids = {row["codice_fiscale"] for row in sample}
+    devset = draw_stratified(
+        eligible,
+        target_count=28,
+        other_count=12,
+        seed=DEVSET_SEED,
+        exclude=sample_ids,
+    )
+    write_sample(sample, SAMPLE_OUTPUT)
+    write_sample(devset, DEVSET_OUTPUT)
 
-    target_count = sum(row["ateco"].strip() == "621000" for row in sample)
-    print(f"Seed: {SEED}")
     print(f"Source: {len(source_rows)} companies")
     print("Eligible: 9,620 companies (4,259 ATECO 621000, 5,361 other)")
-    print(f"Sample: {len(sample)} companies ({target_count} ATECO 621000, "
-          f"{len(sample) - target_count} other)")
+    print(f"Sample: seed={SAMPLE_SEED}, 140 ATECO 621000, 60 other, "
+          f"sha256={sha256(SAMPLE_OUTPUT)}")
+    print(f"Dev set: seed={DEVSET_SEED}, 28 ATECO 621000, 12 other, "
+          f"sha256={sha256(DEVSET_OUTPUT)}")
     print(f"Frozen 50 included: {set(FROZEN_50).issubset(row['codice_fiscale'] for row in sample)}")
-    print(f"Wrote: {OUTPUT}")
+    print(f"Intersection: {len(sample_ids & {row['codice_fiscale'] for row in devset})}")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Export one tagging run using the v4 bake-off CSV contract.
+"""Export one tagging run using the v5 bake-off CSV contract.
 
     python scripts/export_tags.py                 # newest run, Codex filename
     python scripts/export_tags.py --run-id 7
@@ -6,7 +6,7 @@
 
 Writes to data/ (git-ignored). The output has exactly the columns, ordering,
 encoding, line endings, and 200-company row count required by
-docs/tagging-contract-v4.md.
+the shared tagging contract.
 """
 from __future__ import annotations
 
@@ -87,6 +87,56 @@ def _require_contract_row_count(rows, run_id: int) -> None:
         )
 
 
+def _join_multi_value(values, field: str, run_id: int, cf: str) -> str:
+    """Join one or two ordered tag values using the contract delimiter."""
+    if not 1 <= len(values) <= 2:
+        raise SystemExit(
+            f"tag_run {run_id}, company {cf}, has {len(values)} values for "
+            f"{field}; the v5 contract requires one or two. No file was written."
+        )
+    return "|".join(values)
+
+
+def _single_value(values, default: str, field: str,
+                  run_id: int, cf: str) -> str:
+    """Return a single-valued tag, rejecting ambiguous stored runs."""
+    if not values:
+        return default
+    if len(values) != 1:
+        raise SystemExit(
+            f"tag_run {run_id}, company {cf}, has {len(values)} values for "
+            f"{field}; the v5 contract requires exactly one. No file was written."
+        )
+    return values[0]
+
+
+def _export_row(db_row, run_id: int) -> list[object]:
+    """Convert one ordered database aggregate into a contract CSV row."""
+    (cf, name, ateco, attivita, current_url, parent_sectors, sectors,
+     product_types, customer_models, legacy_business_models, one_lines,
+     fetch_pass, fetch_bucket, homepage_chars, evidence) = db_row
+
+    parent_sectors = parent_sectors or ["unclear"]
+    product_types = product_types or ["unclear"]
+    customer_models = customer_models or legacy_business_models or ["unclear"]
+    website_url, fetch_pass, fetch_bucket, homepage_chars = _provenance(
+        current_url, fetch_pass, fetch_bucket, homepage_chars, evidence
+    )
+    return [
+        str(cf), name, ateco, attivita, website_url,
+        _join_multi_value(parent_sectors, "parent_sector", run_id, str(cf)),
+        _single_value(sectors, "unclear", "sector", run_id, str(cf)),
+        _join_multi_value(product_types, "product_type", run_id, str(cf)),
+        _join_multi_value(customer_models, "customer_model", run_id, str(cf)),
+        _single_value(
+            one_lines,
+            "Tagging failed; no classification was produced.",
+            "one_line", run_id, str(cf),
+        ),
+        fetch_pass, fetch_bucket, homepage_chars,
+    ]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -122,22 +172,18 @@ def main() -> None:
                    c.ateco_raw,
                    c.attivita_label,
                    c.sito_internet_url,
-                   max(CASE WHEN t.tag_type = 'parent_sector'  THEN t.tag_value END),
-                   max(CASE WHEN t.tag_type = 'sector'         THEN t.tag_value END),
-                   max(CASE WHEN t.tag_type = 'product_type'   THEN t.tag_value END),
-                   max(CASE WHEN t.tag_type = 'customer_model' THEN t.tag_value END),
-                   max(CASE WHEN t.tag_type = 'business_model' THEN t.tag_value END),
-                   max(CASE WHEN t.tag_type = 'one_line'       THEN t.tag_value END),
-                   count(DISTINCT CASE WHEN t.tag_type = 'parent_sector'
-                                       THEN t.tag_value END),
-                   count(DISTINCT CASE WHEN t.tag_type = 'sector'
-                                       THEN t.tag_value END),
-                   count(DISTINCT CASE WHEN t.tag_type = 'product_type'
-                                       THEN t.tag_value END),
-                   count(DISTINCT CASE WHEN t.tag_type = 'customer_model'
-                                       THEN t.tag_value END),
-                   count(DISTINCT CASE WHEN t.tag_type = 'one_line'
-                                       THEN t.tag_value END),
+                   array_agg(t.tag_value ORDER BY t.id)
+                       FILTER (WHERE t.tag_type = 'parent_sector'),
+                   array_agg(t.tag_value ORDER BY t.id)
+                       FILTER (WHERE t.tag_type = 'sector'),
+                   array_agg(t.tag_value ORDER BY t.id)
+                       FILTER (WHERE t.tag_type = 'product_type'),
+                   array_agg(t.tag_value ORDER BY t.id)
+                       FILTER (WHERE t.tag_type = 'customer_model'),
+                   array_agg(t.tag_value ORDER BY t.id)
+                       FILTER (WHERE t.tag_type = 'business_model'),
+                   array_agg(t.tag_value ORDER BY t.id)
+                       FILTER (WHERE t.tag_type = 'one_line'),
                    max(t.fetch_pass),
                    max(t.fetch_bucket),
                    max(t.homepage_chars),
@@ -153,39 +199,7 @@ def main() -> None:
 
     _require_contract_row_count(db_rows, run_id)
 
-    rows = []
-    for (cf, name, ateco, attivita, current_url, parent_sector, sector,
-         product_type, customer_model, legacy_business_model, one_line,
-         parent_count, sector_count, product_count, customer_count,
-         one_line_count, fetch_pass, fetch_bucket, homepage_chars,
-         evidence) in db_rows:
-        counts = {
-            "parent_sector": parent_count,
-            "sector": sector_count,
-            "product_type": product_count,
-            "customer_model": customer_count,
-            "one_line": one_line_count,
-        }
-        repeated = [field for field, count in counts.items() if count > 1]
-        if repeated:
-            raise SystemExit(
-                f"tag_run {run_id}, company {cf}, has multiple values for "
-                f"{', '.join(repeated)}; the v4 contract requires single values. "
-                "No file was written."
-            )
-
-        website_url, fetch_pass, fetch_bucket, homepage_chars = _provenance(
-            current_url, fetch_pass, fetch_bucket, homepage_chars, evidence
-        )
-        rows.append([
-            str(cf), name, ateco, attivita, website_url,
-            parent_sector or "unclear",
-            sector or "unclear",
-            product_type or "unclear",
-            customer_model or legacy_business_model or "unclear",
-            one_line or "Tagging failed; no classification was produced.",
-            fetch_pass, fetch_bucket, homepage_chars,
-        ])
+    rows = [_export_row(db_row, run_id) for db_row in db_rows]
 
     out = args.out or (
         REPO_ROOT / "data" /

@@ -1,9 +1,11 @@
-"""Executable checks for the v4 tagging and CSV contracts."""
+"""Executable checks for the v5 tagging and CSV contracts."""
 from __future__ import annotations
 
+import asyncio
 import csv
 import pathlib
 import sys
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -15,36 +17,93 @@ import tag_companies  # noqa: E402
 
 def _valid_tags(**overrides):
     values = {
-        "parent_sector": "business_software",
+        "parent_sector": ["business_software"],
         "sector": "accounting automation",
-        "product_type": "software_product",
-        "customer_model": "b2b",
+        "product_type": ["software_product"],
+        "customer_model": ["b2b"],
         "one_line": "Automates accounting workflows for businesses.",
     }
     values.update(overrides)
     return tag_companies.CompanyTags(**values)
 
 
-def test_v4_classification_fields_are_single_values():
-    tags = _valid_tags()
-    assert tags.parent_sector == "business_software"
-    assert tags.product_type == "software_product"
-    assert tags.customer_model == "b2b"
+def test_v5_classification_fields_are_ordered_lists_of_one_or_two():
+    tags = _valid_tags(
+        parent_sector=["climate_energy_circular", "food_agriculture"],
+        product_type=["hardware_device", "software_product"],
+        customer_model=["b2b", "b2c"],
+    )
+    assert tags.parent_sector == ["climate_energy_circular", "food_agriculture"]
+    assert tags.product_type == ["hardware_device", "software_product"]
+    assert tags.customer_model == ["b2b", "b2c"]
 
     for field, value in (
-        ("parent_sector", ["business_software"]),
-        ("product_type", ["software_product"]),
-        ("customer_model", ["b2b"]),
+        ("parent_sector", "business_software"),
+        ("parent_sector", []),
+        ("parent_sector", ["business_software", "other", "food_agriculture"]),
+        ("product_type", "software_product"),
+        ("product_type", []),
+        ("product_type", ["software_product", "hardware_device", "marketplace"]),
+        ("customer_model", "b2b"),
+        ("customer_model", []),
+        ("customer_model", ["b2b", "b2c", "b2g"]),
     ):
         with pytest.raises(ValidationError):
             _valid_tags(**{field: value})
 
 
-def test_prompt_matches_single_value_contract_and_keeps_precedence():
-    assert "are LISTS" not in tag_companies.SYSTEM_PROMPT
+@pytest.mark.parametrize("field,other", [
+    ("parent_sector", "business_software"),
+    ("product_type", "software_product"),
+    ("customer_model", "b2b"),
+])
+def test_unclear_cannot_appear_with_another_value(field, other):
+    with pytest.raises(ValidationError, match="cannot combine 'unclear'"):
+        _valid_tags(**{field: ["unclear", other]})
+
+
+@pytest.mark.parametrize("direct_model", ["b2b", "b2c"])
+def test_b2b2c_cannot_appear_with_direct_customer_models(direct_model):
+    with pytest.raises(ValidationError, match="cannot combine 'b2b2c'"):
+        _valid_tags(customer_model=["b2b2c", direct_model])
+
+
+def test_validation_failure_is_reasked_once():
+    class Messages:
+        def __init__(self):
+            self.calls = []
+
+        async def parse(self, **kwargs):
+            self.calls.append(kwargs)
+            if len(self.calls) == 1:
+                return SimpleNamespace(
+                    parsed_output=_valid_tags(
+                        customer_model=["b2b2c", "b2b"]
+                    ),
+                    usage=None,
+                )
+            return SimpleNamespace(parsed_output=_valid_tags(), usage=None)
+
+    messages = Messages()
+    client = SimpleNamespace(messages=messages)
+    result = asyncio.run(tag_companies.tag_one(
+        client, asyncio.Semaphore(1), "01234567890", "Example", "Software",
+        "https://example.it", "Homepage text", "OK", "OK", "http",
+    ))
+
+    assert result.tags == _valid_tags()
+    assert len(messages.calls) == 2
+    assert "previous classification was rejected" in (
+        messages.calls[1]["messages"][0]["content"]
+    )
+
+
+def test_prompt_matches_multi_value_contract_and_keeps_precedence():
+    assert "are LISTS of one or two" in tag_companies.SYSTEM_PROMPT
     assert "marketplace beats software_product" in tag_companies.SYSTEM_PROMPT
-    assert "Choose one value" in tag_companies.SYSTEM_PROMPT
-    assert tag_companies.PROMPT_VERSION == "v4-single-value-2026-09-06"
+    assert "hedging is not free" in tag_companies.SYSTEM_PROMPT
+    assert '`["b2b", "b2c"]`' in tag_companies.SYSTEM_PROMPT
+    assert tag_companies.PROMPT_VERSION == "v5-multi-value-200-2026-09-06"
 
 
 def test_export_columns_match_contract_exactly():
@@ -70,6 +129,25 @@ def test_export_is_bom_utf8_with_lf_line_endings(tmp_path):
     with path.open(encoding="utf-8-sig", newline="") as fh:
         parsed = list(csv.reader(fh))
     assert parsed == [export_tags.COLUMNS, [str(value) for value in row]]
+
+
+def test_export_pipe_joins_two_values_in_model_order():
+    db_row = (
+        "02201200678", "Example S.R.L.", "621000", "Software",
+        "https://example.it",
+        ["climate_energy_circular", "food_agriculture"],
+        ["farm energy management"],
+        ["software_product", "hardware_device"],
+        ["b2b"], None,
+        ["Manages renewable energy for farms."],
+        "http", "OK", 1234,
+        "https://example.it | 1234 chars of homepage text | fetch=OK | pass=http",
+    )
+
+    row = export_tags._export_row(db_row, run_id=7)
+
+    assert row[5] == "climate_energy_circular|food_agriculture"
+    assert row[7] == "software_product|hardware_device"
 
 
 def test_export_uses_url_and_provenance_recorded_with_run():

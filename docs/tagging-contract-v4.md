@@ -1,5 +1,8 @@
 # Tagging contract — v4
 
+> **Superseded by `docs/tagging-contract-v5.md`.** Kept for history.
+> v4's single-value fields and 50-company sample are both obsolete.
+
 The shared agreement between the two pipelines being compared. Both sides
 build independently; this document is the only thing they hold in common.
 

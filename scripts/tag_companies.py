@@ -11,7 +11,7 @@ Results are written to `company_tags`, stamped with a `tag_runs` row recording
 the model and prompt version, so a later run with a better prompt can be
 compared against this one instead of overwriting it.
 
-Needs ANTHROPIC_API_KEY in .env (see README).
+Needs OPENAI_API_KEY in .env (see README).
 """
 from __future__ import annotations
 
@@ -27,9 +27,10 @@ from typing import Literal
 
 import os
 
-import anthropic
 import httpx
+import openai
 from dotenv import load_dotenv
+from openai import AsyncOpenAI
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from db import connect, REPO_ROOT
@@ -38,26 +39,15 @@ from db import connect, REPO_ROOT
 from test_websites import Result, check_one, USER_AGENT, THIN_TEXT_CHARS
 import render
 
-def make_client(async_client: bool = True):
-    """Build an Anthropic client, honouring ANTHROPIC_WORKSPACE_ID.
-
-    Identity-linked API keys (the kind the Console issues for a user rather
-    than an org) reject every request with a 400 unless the workspace is named:
-        "anthropic-workspace-id is required when authenticating with an
-         identity-linked API key"
-    A plain org key does not need this, so the header is only attached when the
-    variable is set.
-    """
+def make_client():
+    """Build the async OpenAI client from the repository's .env file."""
     load_dotenv(REPO_ROOT / ".env")
-    workspace = (os.environ.get("ANTHROPIC_WORKSPACE_ID") or "").strip()
-    headers = {"anthropic-workspace-id": workspace} if workspace else None
-    cls = anthropic.AsyncAnthropic if async_client else anthropic.Anthropic
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    if not os.environ.get("OPENAI_API_KEY"):
         sys.exit(
-            "ERROR: ANTHROPIC_API_KEY is not set.\n"
+            "ERROR: OPENAI_API_KEY is not set.\n"
             "  Add it to .env — see the README section 'Tagging companies'."
         )
-    return cls(default_headers=headers)
+    return AsyncOpenAI()
 
 
 # ---------------------------------------------------------------------------
@@ -66,11 +56,13 @@ def make_client(async_client: bool = True):
 # ---------------------------------------------------------------------------
 PROMPT_VERSION = "v5-multi-value-200-2026-09-06"
 
-# Haiku 4.5, chosen for cost on a high-volume classification task.
-# NOTE: Haiku 4.5 does not accept output_config.effort — passing it errors.
-MODEL = "claude-haiku-4-5"
-PRICE_IN_PER_MTOK = 1.00
-PRICE_OUT_PER_MTOK = 5.00
+# Balanced quality and cost for a benchmark whose score is classification
+# accuracy. Reasoning is disabled at the request site: this is a focused task.
+MODEL = "gpt-5.6-terra"
+PRICE_IN_PER_MTOK = 2.00
+PRICE_CACHED_IN_PER_MTOK = 0.20
+PRICE_CACHE_WRITE_PER_MTOK = 2.50
+PRICE_OUT_PER_MTOK = 12.00
 
 # A page longer than this is unusual; we warn rather than silently truncating,
 # because a truncated homepage produces a confidently wrong tag.
@@ -382,7 +374,7 @@ async def fetch_all(sample: list[tuple], concurrency: int, timeout: float,
 
 
 # ---------------------------------------------------------------------------
-# Phase 2 — tag with Claude
+# Phase 2 — tag with OpenAI
 # ---------------------------------------------------------------------------
 
 class Tagged:
@@ -405,14 +397,17 @@ async def tag_one(client, sem, cf, name, attivita, url, page_text,
     async with sem:
         for attempt in range(2):
             try:
-                response = await client.messages.parse(
+                response = await client.responses.parse(
                     model=MODEL,
-                    max_tokens=1024,
-                    system=SYSTEM_PROMPT,
-                    messages=[{"role": "user", "content": user_message}],
-                    output_format=CompanyTags,
+                    max_output_tokens=1024,
+                    reasoning={"effort": "none"},
+                    input=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": user_message},
+                    ],
+                    text_format=CompanyTags,
                 )
-                return Tagged(cf, name, attivita, url, response.parsed_output,
+                return Tagged(cf, name, attivita, url, response.output_parsed,
                               response.usage, page_chars=len(page_text),
                               fetch_bucket=bucket, fetch_pass=fetch_pass)
             except ValidationError as exc:
@@ -429,9 +424,9 @@ async def tag_one(client, sem, cf, name, attivita, url, page_text,
                     "classification. Keep each list to one or two ordered values "
                     "and obey the combination rules."
                 )
-            except anthropic.APIStatusError as exc:
+            except openai.APIStatusError as exc:
                 return Tagged(cf, name, attivita, url, None, None,
-                              error=f"{type(exc).__name__}: {exc.message}",
+                              error=f"{type(exc).__name__}: {exc}",
                               page_chars=len(page_text), fetch_bucket=bucket,
                               fetch_pass=fetch_pass)
             except Exception as exc:  # noqa: BLE001
@@ -569,6 +564,30 @@ def print_table(results: list[Tagged]) -> None:
         print(f"     says  : {g.one_line}")
 
 
+def usage_totals(usages) -> tuple[int, int, int, int, float]:
+    """Return input, cache-read, cache-write, output tokens, and cost."""
+    input_tokens = sum(usage.input_tokens for usage in usages)
+    output_tokens = sum(usage.output_tokens for usage in usages)
+    cached_tokens = sum(
+        getattr(getattr(usage, "input_tokens_details", None),
+                "cached_tokens", 0) or 0
+        for usage in usages
+    )
+    cache_write_tokens = sum(
+        getattr(getattr(usage, "input_tokens_details", None),
+                "cache_write_tokens", 0) or 0
+        for usage in usages
+    )
+    uncached_tokens = input_tokens - cached_tokens - cache_write_tokens
+    cost = (
+        uncached_tokens / 1e6 * PRICE_IN_PER_MTOK
+        + cached_tokens / 1e6 * PRICE_CACHED_IN_PER_MTOK
+        + cache_write_tokens / 1e6 * PRICE_CACHE_WRITE_PER_MTOK
+        + output_tokens / 1e6 * PRICE_OUT_PER_MTOK
+    )
+    return input_tokens, cached_tokens, cache_write_tokens, output_tokens, cost
+
+
 def print_summary(results: list[Tagged], stats: dict, elapsed: float) -> None:
     ok = [t for t in results if t.tags]
     failed = [t for t in results if t.error]
@@ -604,10 +623,10 @@ def print_summary(results: list[Tagged], stats: dict, elapsed: float) -> None:
 
     usages = [t.usage for t in ok if t.usage]
     if usages:
-        tin = sum(u.input_tokens for u in usages)
-        tout = sum(u.output_tokens for u in usages)
-        cost = tin / 1e6 * PRICE_IN_PER_MTOK + tout / 1e6 * PRICE_OUT_PER_MTOK
-        print(f"\ntokens: {tin:,} in / {tout:,} out    cost: ${cost:.4f} "
+        tin, cached, cache_writes, tout, cost = usage_totals(usages)
+        print(f"\ntokens: {tin:,} in ({cached:,} cached, "
+              f"{cache_writes:,} cache writes) / {tout:,} out"
+              f"    cost: ${cost:.4f} "
               f"(${cost/len(usages):.5f} per company)")
         print(f"extrapolated to all 9,620 companies with a website: "
               f"${cost/len(usages)*9620:.2f}")

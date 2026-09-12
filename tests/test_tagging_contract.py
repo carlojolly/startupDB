@@ -69,7 +69,7 @@ def test_b2b2c_cannot_appear_with_direct_customer_models(direct_model):
 
 
 def test_validation_failure_is_reasked_once():
-    class Messages:
+    class Responses:
         def __init__(self):
             self.calls = []
 
@@ -77,24 +77,64 @@ def test_validation_failure_is_reasked_once():
             self.calls.append(kwargs)
             if len(self.calls) == 1:
                 return SimpleNamespace(
-                    parsed_output=_valid_tags(
-                        customer_model=["b2b2c", "b2b"]
+                    output_parsed=_valid_tags(
+                        parent_sector=[
+                            "business_software",
+                            "financial_services_insurance",
+                            "health_life_sciences",
+                        ]
                     ),
                     usage=None,
                 )
-            return SimpleNamespace(parsed_output=_valid_tags(), usage=None)
+            return SimpleNamespace(output_parsed=_valid_tags(), usage=None)
 
-    messages = Messages()
-    client = SimpleNamespace(messages=messages)
+    responses = Responses()
+    client = SimpleNamespace(responses=responses)
     result = asyncio.run(tag_companies.tag_one(
         client, asyncio.Semaphore(1), "01234567890", "Example", "Software",
         "https://example.it", "Homepage text", "OK", "OK", "http",
     ))
 
     assert result.tags == _valid_tags()
-    assert len(messages.calls) == 2
+    assert len(responses.calls) == 2
     assert "previous classification was rejected" in (
-        messages.calls[1]["messages"][0]["content"]
+        responses.calls[1]["input"][1]["content"]
+    )
+    assert responses.calls[1]["text_format"] is tag_companies.CompanyTags
+
+
+def test_openai_usage_accounting_includes_prompt_cache_rates():
+    usages = [
+        SimpleNamespace(
+            input_tokens=2_000,
+            output_tokens=100,
+            input_tokens_details=SimpleNamespace(
+                cached_tokens=1_200,
+                cache_write_tokens=500,
+            ),
+        ),
+        SimpleNamespace(
+            input_tokens=1_500,
+            output_tokens=80,
+            input_tokens_details=SimpleNamespace(
+                cached_tokens=0,
+                cache_write_tokens=0,
+            ),
+        ),
+    ]
+
+    input_tokens, cached_tokens, cache_write_tokens, output_tokens, cost = (
+        tag_companies.usage_totals(usages)
+    )
+
+    assert (input_tokens, cached_tokens, cache_write_tokens, output_tokens) == (
+        3_500, 1_200, 500, 180,
+    )
+    assert cost == pytest.approx(
+        1_800 / 1e6 * tag_companies.PRICE_IN_PER_MTOK
+        + 1_200 / 1e6 * tag_companies.PRICE_CACHED_IN_PER_MTOK
+        + 500 / 1e6 * tag_companies.PRICE_CACHE_WRITE_PER_MTOK
+        + 180 / 1e6 * tag_companies.PRICE_OUT_PER_MTOK
     )
 
 

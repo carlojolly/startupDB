@@ -284,17 +284,15 @@ ORDER BY observed_on DESC LIMIT 50;
 The registry's own classification is too coarse to search on — 44% of the
 database is ATECO 621000, which cannot separate a B2B SaaS product from an IT
 consultancy. `scripts/tag_companies.py` reads each company's homepage and asks
-Claude for a specific sub-sector, business model, product type and one-line
-description.
+OpenAI for a specific sub-sector, parent sector, product type, customer model
+and one-line description.
 
-It needs `ANTHROPIC_API_KEY` in `.env` (create one at
-[console.anthropic.com](https://console.anthropic.com/settings/keys)). If your
-key is identity-linked rather than an organization key, also set
-`ANTHROPIC_WORKSPACE_ID` — the API returns a 400 telling you so.
+It needs `OPENAI_API_KEY` in `.env` (create one at
+[platform.openai.com/api-keys](https://platform.openai.com/api-keys)).
 
 ```bash
 python scripts/tag_companies.py --dry-run    # whole pipeline, no API calls, no cost
-python scripts/tag_companies.py              # 50 companies, writes to the database
+python scripts/tag_companies.py              # frozen 200, writes to the database
 ```
 
 ### The homepage fetch runs in two passes

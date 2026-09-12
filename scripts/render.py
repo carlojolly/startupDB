@@ -16,7 +16,9 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-from test_websites import TextExtractor, USER_AGENT
+from test_websites import (
+    TextExtractor, USER_AGENT, is_same_site, registrable_domain,
+)
 
 # Assets that cannot contribute text. Blocking them cuts render time
 # substantially on image-heavy marketing sites and changes no extracted text.
@@ -26,6 +28,7 @@ BLOCKED_RESOURCE_TYPES = {"image", "media", "font"}
 @dataclass
 class Rendered:
     url: str
+    final_url: str = ""
     text: str = ""
     title: str = ""
     ok: bool = False
@@ -70,6 +73,13 @@ async def _render_one(context, url: str, settle_ms: int, timeout_ms: int) -> Ren
                     # A page that polls forever never goes idle; take what has
                     # rendered by now rather than failing the whole fetch.
                     note = (note + " no-networkidle").strip()
+                result.final_url = page.url
+                if not is_same_site(candidate, result.final_url):
+                    result.note = (
+                        f"offsite_redirect:{registrable_domain(candidate)}->"
+                        f"{registrable_domain(result.final_url)}"
+                    )
+                    break
                 parser = TextExtractor()
                 parser.feed(await page.content())
                 result.text = parser.text

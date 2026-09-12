@@ -25,11 +25,16 @@ import csv
 import datetime
 import pathlib
 import random
+import re
 import sys
 from dataclasses import dataclass, asdict
-from html.parser import HTMLParser
+from urllib.parse import urlsplit
 
 import httpx
+from courlan import extract_domain
+from lxml import html as lxml_html
+from lxml.etree import ParserError
+from trafilatura import extract
 
 from db import connect, REPO_ROOT
 
@@ -49,48 +54,115 @@ THIN_TEXT_CHARS = 500
 # Never read more than this from any single response.
 MAX_BYTES = 2_000_000
 
-SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "head"}
+DROP_TAGS = {
+    "script", "style", "noscript", "template", "svg", "nav", "footer",
+    "aside", "dialog", "form",
+}
+NOISE_TOKENS = {
+    "cookie", "cookies", "cookie-banner", "cookie-modal", "cookie-notice",
+    "cookie-consent", "consent-banner", "consent-modal", "gdpr-banner",
+    "privacy-banner", "cc-window", "cc-banner", "newsletter-popup",
+    "cc_div", "cm_inner",
+}
+NOISE_PREFIXES = (
+    "onetrust", "iubenda", "cookiebot", "cmplz-", "cky-", "cookiefirst",
+    "cookieyes",
+)
 
 
-class TextExtractor(HTMLParser):
-    """Pull visible text and the <title> out of an HTML document.
+def _noise_container(element) -> bool:
+    attributes = " ".join((element.get("id") or "", element.get("class") or ""))
+    tokens = {token for token in re.split(r"[^a-z0-9_-]+", attributes.lower())
+              if token}
+    return bool(
+        tokens & NOISE_TOKENS
+        or any(token.startswith(NOISE_PREFIXES) for token in tokens)
+    )
 
-    Uses the standard library rather than BeautifulSoup/lxml so the repo keeps
-    a small, reliably-installable dependency set.
+
+def _normalise_text(text: str) -> str:
+    return " ".join(text.split())
+
+
+class TextExtractor:
+    """Extract the page's own main content and title.
+
+    A small structural pass removes known non-content containers. Semantic
+    <main> content wins when present; Trafilatura handles pages without useful
+    landmarks and malformed real-world markup.
     """
 
     def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.chunks: list[str] = []
         self.title: str = ""
-        self._skip_depth = 0
-        self._in_title = False
+        self._text: str = ""
 
-    def handle_starttag(self, tag, attrs):
-        if tag in SKIP_TAGS:
-            self._skip_depth += 1
-        if tag == "title":
-            self._in_title = True
+    def feed(self, source: str) -> None:
+        try:
+            document = lxml_html.fromstring(source)
+        except (ParserError, ValueError):
+            self._text = _normalise_text(extract(
+                source, output_format="txt", include_comments=False,
+                include_tables=False, deduplicate=True, favor_recall=True,
+            ) or "")
+            return
 
-    def handle_endtag(self, tag):
-        if tag in SKIP_TAGS and self._skip_depth:
-            self._skip_depth -= 1
-        if tag == "title":
-            self._in_title = False
+        self.title = _normalise_text(" ".join(document.xpath("//title/text()")))
+        for element in list(document.iter()):
+            tag = element.tag.lower() if isinstance(element.tag, str) else ""
+            role = (element.get("role") or "").lower()
+            style = (element.get("style") or "").replace(" ", "").lower()
+            hidden = (
+                tag not in {"html", "body"}
+                and (element.get("hidden") is not None
+                     or (element.get("aria-hidden") or "").lower() == "true"
+                     or "display:none" in style)
+            )
+            if (tag in DROP_TAGS or role in {"navigation", "contentinfo", "dialog"}
+                    or hidden or _noise_container(element)):
+                parent = element.getparent()
+                if parent is not None:
+                    parent.remove(element)
 
-    def handle_data(self, data):
-        if self._in_title:
-            self.title += data
-        # <head> is in SKIP_TAGS, so title text is captured above but not
-        # counted toward the visible-text total.
-        if self._skip_depth == 0:
-            text = data.strip()
-            if text:
-                self.chunks.append(text)
+        main_nodes = document.xpath("//main | //*[@role='main']")
+        main_text = _normalise_text(" ".join(
+            node.text_content() for node in main_nodes
+        ))
+        cleaned_html = lxml_html.tostring(document, encoding="unicode")
+        fallback = _normalise_text(extract(
+            cleaned_html, output_format="txt", include_comments=False,
+            include_tables=False, deduplicate=True, favor_recall=True,
+        ) or "")
+        self._text = main_text if len(main_text) >= THIN_TEXT_CHARS else fallback
 
     @property
     def text(self) -> str:
-        return " ".join(self.chunks)
+        return self._text
+
+
+def registrable_domain(url: str) -> str:
+    """Return the registrable domain, falling back to the normalized host."""
+    domain = extract_domain(url)
+    if domain:
+        return domain.lower().rstrip(".")
+    return (urlsplit(url).hostname or "").lower().rstrip(".")
+
+
+def is_same_site(requested_url: str, final_url: str) -> bool:
+    """Allow root/child-domain hops, but reject other domains and siblings."""
+    requested = registrable_domain(requested_url)
+    final = registrable_domain(final_url)
+    if not requested or requested != final:
+        return False
+
+    requested_host = (urlsplit(requested_url).hostname or "").lower().rstrip(".")
+    final_host = (urlsplit(final_url).hostname or "").lower().rstrip(".")
+    requested_host = requested_host.removeprefix("www.")
+    final_host = final_host.removeprefix("www.")
+    return (
+        requested_host == final_host
+        or requested_host == requested
+        or final_host == requested
+    )
 
 
 @dataclass
@@ -193,6 +265,15 @@ async def check_one(client: httpx.AsyncClient, sem: asyncio.Semaphore,
             result.status_code = response.status_code
             result.final_url = str(response.url)
             result.redirected = str(response.url).rstrip("/") != candidate.rstrip("/")
+
+            if not is_same_site(candidate, result.final_url):
+                result.bucket = "DEAD"
+                result.reason = "offsite_redirect"
+                result.detail = (
+                    f"{registrable_domain(candidate)} -> "
+                    f"{registrable_domain(result.final_url)}"
+                )
+                break
 
             if response.status_code >= 400:
                 # An HTTP error is a definitive answer from a live server, so

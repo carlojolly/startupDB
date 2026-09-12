@@ -348,7 +348,10 @@ async def fetch_all(sample: list[tuple], concurrency: int, timeout: float,
                           fetch_bucket=_bucket(len(text)),
                           note=(r.reason if r else "not fetched"))
 
-    needs_render = [f for f in out.values() if f.chars < THIN_TEXT_CHARS]
+    needs_render = [
+        f for f in out.values()
+        if f.chars < THIN_TEXT_CHARS and f.note != "offsite_redirect"
+    ]
     if not use_browser:
         print(f"  pass 2 — skipped (--no-render); {len(needs_render)} thin pages left as-is")
         return out
@@ -362,6 +365,12 @@ async def fetch_all(sample: list[tuple], concurrency: int, timeout: float,
     rescued = 0
     for f in needs_render:
         got = rendered.get(f.url)
+        if got and got.note.startswith("offsite_redirect:"):
+            f.text = ""
+            f.fetch_pass = "none"
+            f.fetch_bucket = "DEAD"
+            f.note = got.note
+            continue
         if got and len(got.text) > f.chars:
             f.text = got.text
             f.fetch_pass = "browser"

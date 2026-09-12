@@ -165,6 +165,15 @@ def is_same_site(requested_url: str, final_url: str) -> bool:
     )
 
 
+def page_identifies_company(codice_fiscale: str, source: str) -> bool:
+    """Verify a redirected page with the company's exact fiscal identifier."""
+    expected = "".join(character for character in codice_fiscale.lower()
+                       if character.isalnum())
+    document = "".join(character for character in source.lower()
+                       if character.isalnum())
+    return len(expected) >= 8 and expected in document
+
+
 @dataclass
 class Result:
     codice_fiscale: str
@@ -266,15 +275,6 @@ async def check_one(client: httpx.AsyncClient, sem: asyncio.Semaphore,
             result.final_url = str(response.url)
             result.redirected = str(response.url).rstrip("/") != candidate.rstrip("/")
 
-            if not is_same_site(candidate, result.final_url):
-                result.bucket = "DEAD"
-                result.reason = "offsite_redirect"
-                result.detail = (
-                    f"{registrable_domain(candidate)} -> "
-                    f"{registrable_domain(result.final_url)}"
-                )
-                break
-
             if response.status_code >= 400:
                 # An HTTP error is a definitive answer from a live server, so
                 # there is no point retrying it over http.
@@ -289,9 +289,21 @@ async def check_one(client: httpx.AsyncClient, sem: asyncio.Semaphore,
                 result.reason = f"not_html:{content_type}"
                 break
 
+            source = decode(body, response)
+            offsite_redirect = not is_same_site(candidate, result.final_url)
+            if offsite_redirect:
+                result.detail = (
+                    f"{registrable_domain(candidate)} -> "
+                    f"{registrable_domain(result.final_url)}"
+                )
+                if not page_identifies_company(cf, source):
+                    result.bucket = "DEAD"
+                    result.reason = "offsite_redirect"
+                    break
+
             parser = TextExtractor()
             try:
-                parser.feed(decode(body, response))
+                parser.feed(source)
             except Exception as exc:  # malformed markup
                 result.detail = f"parse:{type(exc).__name__}"
             result.text_chars = len(parser.text)
@@ -300,9 +312,16 @@ async def check_one(client: httpx.AsyncClient, sem: asyncio.Semaphore,
                 result.page_text = parser.text
 
             if result.text_chars >= THIN_TEXT_CHARS:
-                result.bucket, result.reason = "OK", "ok"
+                result.bucket = "OK"
+                result.reason = (
+                    "verified_offsite_redirect" if offsite_redirect else "ok"
+                )
             else:
-                result.bucket, result.reason = "THIN", "little_text"
+                result.bucket = "THIN"
+                result.reason = (
+                    "verified_offsite_redirect_little_text"
+                    if offsite_redirect else "little_text"
+                )
             break
         else:
             result.bucket = "DEAD"

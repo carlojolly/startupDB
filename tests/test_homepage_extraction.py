@@ -63,3 +63,34 @@ def test_offsite_redirect_is_dead_and_its_text_is_discarded():
     assert result.reason == "offsite_redirect"
     assert result.detail == "g-lab.cloud -> goo.su"
     assert result.page_text == ""
+
+
+def test_offsite_redirect_is_accepted_when_page_has_exact_fiscal_code():
+    codice_fiscale = "02744830205"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "www.chillbit.it":
+            return httpx.Response(302, headers={"location": "https://chillb.it"})
+        return httpx.Response(
+            200,
+            text=(
+                "<main><h1>Software integration</h1>"
+                + "We build custom business applications. " * 20
+                + "</main><footer>Partita IVA 02744830205</footer>"
+            ),
+        )
+
+    async def exercise():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), follow_redirects=True,
+        ) as client:
+            return await check_one(
+                client, asyncio.Semaphore(1), codice_fiscale, "CHILL BIT",
+                "https://www.chillbit.it", keep_text=True,
+            )
+
+    result = asyncio.run(exercise())
+    assert result.bucket == "OK"
+    assert result.reason == "verified_offsite_redirect"
+    assert result.detail == "chillbit.it -> chillb.it"
+    assert "custom business applications" in result.page_text

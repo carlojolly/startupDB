@@ -1,8 +1,14 @@
-# Tagging contract — v5
+# Tagging contract — v5.1
 
 The shared agreement between the two pipelines being compared. Both sides build
 independently; this document is the only thing they hold in common. Supersedes
 `docs/tagging-contract-v4.md` in full — read this one, not that one.
+
+**Changes in v5.1.** Two `parent_sector` values added —
+`hospitality_travel_food_service` and `arts_culture_heritage` — after dev-set
+labelling showed both were missing and that art authentication was being forced
+into `health_life_sciences`. **This is the last schema change.** Gaps found
+after this point are recorded for a future version, not applied mid-experiment.
 
 **Changes from v4.** The sample grew from 50 companies to 200 and is now a
 committed file rather than a list in this document. A held-out dev set of 40
@@ -123,6 +129,7 @@ product and the consulting to implement it is both of those things.
     real_estate_construction_smart_cities  education_workforce
     media_entertainment_gaming_sports      telecom_cloud_infrastructure
     security_defense_aerospace             government_legal_regulatory
+    hospitality_travel_food_service        arts_culture_heritage
     other                                  unclear
 
 Classify by the industry the **customer** operates in, not by what the product
@@ -134,6 +141,19 @@ industry: accounting, CRM, HR admin, generic analytics. A consultancy is never
 `business_software` — it is whichever industry it advises, or `other`. Use
 `other` when the company is understood but no sector fits; `unclear` when it is
 not understood.
+
+Three boundaries that are otherwise decided inconsistently:
+
+- `food_agriculture` is growing, producing and processing food.
+  **Serving** it — restaurants, catering, hotels — is
+  `hospitality_travel_food_service`, which also covers tourism and travel.
+- `media_entertainment_gaming_sports` is produced content: podcasts, games,
+  film, sport. `arts_culture_heritage` is artworks, museums, heritage and
+  performing-arts institutions — including services sold *to* them, such as
+  conservation, authentication or cataloguing.
+- Authentication and diagnostics applied to **artworks** are
+  `arts_culture_heritage`, not `health_life_sciences`. Judge by the customer's
+  industry, as always, not by the technique.
 
 ### `sector` — the specific sub-sector
 

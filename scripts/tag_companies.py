@@ -54,7 +54,7 @@ def make_client():
 # Bump PROMPT_VERSION whenever the prompt or schema below changes. It is stored
 # on the tag_run so you can tell which wording produced which tags.
 # ---------------------------------------------------------------------------
-PROMPT_VERSION = "v5.1-service-boundary-2026-09-13"
+PROMPT_VERSION = "v5.1-product-boundaries-2026-09-13"
 
 # Balanced quality and cost for a benchmark whose score is classification
 # accuracy. Reasoning is disabled at the request site: this is a focused task.
@@ -138,7 +138,9 @@ robotics". Bad: "technology", "software", "consulting", "innovation".
 - biotech_pharma_product — drugs, diagnostics, biological/chemical products.
 - marketplace — the product MATCHES two distinct sides (buyers and sellers, \
 shippers and carriers) and the company's value is that matching. A product is \
-not a marketplace merely because it is called a "platform".
+not a marketplace merely because it is called a "platform". An online shop or \
+catalogue selling stocked goods itself is physical_product_material, not a \
+marketplace; the two independent sides must transact or be matched through it.
 - tech_enabled_service — the customer buys a repeatable outcome whose delivery \
 is materially automated or orchestrated by the company's own technology, such \
 as telemedicine, technology-operated business processes, or online tutoring. \

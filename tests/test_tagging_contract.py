@@ -196,7 +196,7 @@ def test_prompt_matches_multi_value_contract_and_keeps_precedence():
     assert "Restaurants, catering, hotels, tourism, and travel" in prompt
     assert "podcasts" in prompt and "performing-arts institutions" in prompt
     assert "diagnostics applied to artworks" in prompt
-    assert tag_companies.PROMPT_VERSION == "v5.1-service-boundary-2026-09-13"
+    assert tag_companies.PROMPT_VERSION == "v5.1-product-boundaries-2026-09-13"
 
 
 def test_export_columns_match_contract_exactly():

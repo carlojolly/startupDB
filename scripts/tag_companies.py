@@ -568,6 +568,7 @@ def write_results(results: list[Tagged], dry_run: bool) -> int | None:
     if not results:
         print("Nothing to write — the run contains no companies.")
         return None
+    ok_count = sum(result.tags is not None for result in results)
 
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
@@ -605,10 +606,10 @@ def write_results(results: list[Tagged], dry_run: bool) -> int | None:
         )
         cur.execute(
             "UPDATE tag_runs SET finished_at = now(), companies_tagged = %s WHERE id = %s",
-            (len(ok), run_id),
+            (ok_count, run_id),
         )
         conn.commit()
-    print(f"\nWrote {len(rows)} tag rows for {len(ok)} companies as tag_run {run_id}.")
+    print(f"\nWrote {len(rows)} tag rows for {ok_count} companies as tag_run {run_id}.")
     return run_id
 
 

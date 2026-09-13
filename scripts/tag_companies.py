@@ -538,8 +538,21 @@ TAG_FIELDS = ("parent_sector", "sector", "product_type", "customer_model",
               "one_line")
 
 
+def build_run_notes(results: list[Tagged]) -> str:
+    """Summarise fetch coverage, including the browser's deliberate TLS policy."""
+    ok = [result for result in results if result.tags is not None]
+    return (
+        f"{len(results)} companies sampled; {len(ok)} tagged successfully; "
+        "two-pass fetch — "
+        f"{sum(1 for result in results if result.fetch_pass == 'http')} http, "
+        f"{sum(1 for result in results if result.fetch_pass == 'browser')} browser, "
+        f"{sum(1 for result in results if result.fetch_pass == 'none')} none; "
+        "HTTP pass verifies TLS; browser pass deliberately accepts invalid TLS "
+        "certificates for text-only retrieval"
+    )
+
+
 def write_results(results: list[Tagged], dry_run: bool) -> int | None:
-    ok = [t for t in results if t.tags is not None]
     if not results:
         print("Nothing to write — the run contains no companies.")
         return None
@@ -549,11 +562,7 @@ def write_results(results: list[Tagged], dry_run: bool) -> int | None:
             "INSERT INTO tag_runs (model, prompt_version, notes) VALUES (%s, %s, %s) "
             "RETURNING id",
             (MODEL if not dry_run else f"{MODEL} (DRY RUN STUB)", PROMPT_VERSION,
-             f"{len(results)} companies sampled; {len(ok)} tagged successfully; "
-             f"two-pass fetch — "
-             f"{sum(1 for t in results if t.fetch_pass == 'http')} http, "
-             f"{sum(1 for t in results if t.fetch_pass == 'browser')} browser, "
-             f"{sum(1 for t in results if t.fetch_pass == 'none')} none"),
+             build_run_notes(results)),
         )
         run_id = cur.fetchone()[0]
 

@@ -138,6 +138,19 @@ def test_dead_homepage_is_unclear_without_calling_model(monkeypatch):
     assert result.usage is None
 
 
+def test_run_notes_state_tls_verification_policy():
+    result = tag_companies.Tagged(
+        "02781910209", "FLAB S.R.L.", "Software production",
+        "https://www.cantieresicuro.com", _valid_tags(), None,
+        page_chars=7045, fetch_bucket="OK", fetch_pass="browser",
+    )
+
+    notes = tag_companies.build_run_notes([result])
+
+    assert "HTTP pass verifies TLS" in notes
+    assert "browser pass deliberately accepts invalid TLS certificates" in notes
+
+
 def test_openai_usage_accounting_includes_prompt_cache_rates():
     usages = [
         SimpleNamespace(

@@ -29,11 +29,13 @@ def _valid_tags(**overrides):
 
 def test_v5_classification_fields_are_ordered_lists_of_one_or_two():
     tags = _valid_tags(
-        parent_sector=["climate_energy_circular", "food_agriculture"],
+        parent_sector=["hospitality_travel_food_service", "arts_culture_heritage"],
         product_type=["hardware_device", "software_product"],
         customer_model=["b2b", "b2c"],
     )
-    assert tags.parent_sector == ["climate_energy_circular", "food_agriculture"]
+    assert tags.parent_sector == [
+        "hospitality_travel_food_service", "arts_culture_heritage",
+    ]
     assert tags.product_type == ["hardware_device", "software_product"]
     assert tags.customer_model == ["b2b", "b2c"]
 
@@ -139,11 +141,15 @@ def test_openai_usage_accounting_includes_prompt_cache_rates():
 
 
 def test_prompt_matches_multi_value_contract_and_keeps_precedence():
-    assert "are LISTS of one or two" in tag_companies.SYSTEM_PROMPT
-    assert "marketplace beats software_product" in tag_companies.SYSTEM_PROMPT
-    assert "hedging is not free" in tag_companies.SYSTEM_PROMPT
-    assert '`["b2b", "b2c"]`' in tag_companies.SYSTEM_PROMPT
-    assert tag_companies.PROMPT_VERSION == "v5-multi-value-200-2026-09-06"
+    prompt = tag_companies.SYSTEM_PROMPT
+    assert "are LISTS of one or two" in prompt
+    assert "marketplace beats software_product" in prompt
+    assert "hedging is not free" in prompt
+    assert '`["b2b", "b2c"]`' in prompt
+    assert "Restaurants, catering, hotels, tourism, and travel" in prompt
+    assert "podcasts" in prompt and "performing-arts institutions" in prompt
+    assert "diagnostics applied to artworks" in prompt
+    assert tag_companies.PROMPT_VERSION == "v5.1"
 
 
 def test_export_columns_match_contract_exactly():

@@ -54,7 +54,7 @@ def make_client():
 # Bump PROMPT_VERSION whenever the prompt or schema below changes. It is stored
 # on the tag_run so you can tell which wording produced which tags.
 # ---------------------------------------------------------------------------
-PROMPT_VERSION = "v5-multi-value-200-2026-09-06"
+PROMPT_VERSION = "v5.1"
 
 # Balanced quality and cost for a benchmark whose score is classification
 # accuracy. Reasoning is disabled at the request site: this is a focused task.
@@ -103,7 +103,9 @@ superfluous second value is graded as a miss: hedging is not free. Never put \
   mobility_logistics_supply_chain, food_agriculture, retail_commerce_consumer,
   real_estate_construction_smart_cities, education_workforce,
   media_entertainment_gaming_sports, telecom_cloud_infrastructure,
-  security_defense_aerospace, government_legal_regulatory, other, unclear
+  security_defense_aerospace, government_legal_regulatory,
+  hospitality_travel_food_service, arts_culture_heritage,
+  other, unclear
 
 Apply one rule strictly: classify by the industry the CUSTOMER operates in, \
 not by what the product is made of. \
@@ -112,6 +114,18 @@ business_software. Software for hospitals is health_life_sciences. Use \
 `business_software` ONLY for horizontal products sold across every industry \
 (accounting, CRM, HR admin, generic analytics). Use `other` when you understood \
 the company and no sector fits; `unclear` when you could not tell what it does.
+
+Use `food_agriculture` for growing, producing, or processing food. Restaurants, \
+catering, hotels, tourism, and travel belong to \
+`hospitality_travel_food_service`: they serve food or travellers rather than \
+produce food.
+
+Use `media_entertainment_gaming_sports` for produced content such as podcasts, \
+games, film, and sport. Use `arts_culture_heritage` for artworks, museums, \
+heritage, and performing-arts institutions, including conservation, \
+authentication, cataloguing, or other services sold to them. Authentication \
+or diagnostics applied to artworks is `arts_culture_heritage`, never \
+`health_life_sciences`.
 
 `sector` — the PRIMARY OUTPUT: a SPECIFIC sub-sector inside that parent, in English. Good: \
 "insurance claims automation", "clinical trial recruitment", "warehouse \
@@ -170,6 +184,7 @@ class CompanyTags(BaseModel):
         "real_estate_construction_smart_cities", "education_workforce",
         "media_entertainment_gaming_sports", "telecom_cloud_infrastructure",
         "security_defense_aerospace", "government_legal_regulatory",
+        "hospitality_travel_food_service", "arts_culture_heritage",
         "other", "unclear",
     ]] = Field(min_length=1, max_length=2)
     # Free text, kept for human reading and fuzzy search within a parent sector.

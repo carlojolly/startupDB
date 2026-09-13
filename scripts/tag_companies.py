@@ -54,7 +54,7 @@ def make_client():
 # Bump PROMPT_VERSION whenever the prompt or schema below changes. It is stored
 # on the tag_run so you can tell which wording produced which tags.
 # ---------------------------------------------------------------------------
-PROMPT_VERSION = "v5.1"
+PROMPT_VERSION = "v5.1-service-boundary-2026-09-13"
 
 # Balanced quality and cost for a benchmark whose score is classification
 # accuracy. Reasoning is disabled at the request site: this is a focused task.
@@ -139,10 +139,15 @@ robotics". Bad: "technology", "software", "consulting", "innovation".
 - marketplace — the product MATCHES two distinct sides (buyers and sellers, \
 shippers and carriers) and the company's value is that matching. A product is \
 not a marketplace merely because it is called a "platform".
-- tech_enabled_service — a repeatable service delivered mainly through the \
-company's own technology (telemedicine consultations, online tutoring).
-- professional_services — bespoke human work: consulting, agencies, design, \
-engineering studios, system integration.
+- tech_enabled_service — the customer buys a repeatable outcome whose delivery \
+is materially automated or orchestrated by the company's own technology, such \
+as telemedicine, technology-operated business processes, or online tutoring. \
+Humans may support delivery, but the customer is not mainly buying their time.
+- professional_services — the customer mainly buys people's time, expertise, \
+or judgement: consulting, agencies, clinics, courses or coaching, design, \
+engineering, bespoke software development, and system integration. This stays \
+professional_services even when the engagement is standardised or uses a \
+website, app, videoconference, or ordinary third-party software.
 - infrastructure_project — the company builds, owns or operates physical \
 installations (energy plants, networks, facilities).
 - research_ip_licensing — contract research, or licensing IP, sold as such.
@@ -150,10 +155,14 @@ installations (energy plants, networks, facilities).
 
 When more than one product type could apply, use this precedence:
 1. marketplace beats software_product.
-2. Human work delivered through a digital channel is a service, not software: \
-bespoke work is professional_services; repeatable, productised work is \
-tech_enabled_service.
-3. Choose software_product only when neither rule 1 nor rule 2 applies.
+2. A digital channel alone does not make a service tech-enabled. Ask what \
+delivers the paid-for result: people means professional_services; proprietary \
+technology operating a repeatable workflow means tech_enabled_service.
+3. Use both service values only when the homepage clearly sells both a \
+technology-operated service and a separate people-led engagement. Use \
+software_product with tech_enabled_service when customers can operate a \
+self-service product and can also buy a technology-operated outcome.
+4. Choose software_product only when none of the service rules applies.
 
 `customer_model` — WHO PAYS:
 - b2b businesses, b2c consumers, b2g public sector.

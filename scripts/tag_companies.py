@@ -460,13 +460,22 @@ async def tag_one(client, sem, cf, name, attivita, url, page_text,
                               fetch_pass=fetch_pass)
 
 
+def unreadable_tags() -> CompanyTags:
+    """Deterministic result when there is no homepage evidence to classify."""
+    return CompanyTags(
+        parent_sector=["unclear"],
+        sector="unclear",
+        product_type=["unclear"],
+        customer_model=["unclear"],
+        one_line="Homepage unavailable; cannot determine what this company does.",
+    )
+
+
 def stub_tags(name: str, bucket: str) -> CompanyTags:
     """Offline stand-in used by --dry-run so the pipeline can be exercised
     end to end without an API key or any spend."""
     if bucket != "OK":
-        return CompanyTags(parent_sector=["unclear"], sector="unclear",
-                           product_type=["unclear"], customer_model=["unclear"],
-                           one_line="Homepage unavailable; cannot determine what this company does.")
+        return unreadable_tags()
     return CompanyTags(parent_sector=["business_software"], sector="STUB sub-sector",
                        product_type=["software_product"], customer_model=["b2b"],
                        one_line=f"STUB one-line description for {name[:24]}.")
@@ -484,18 +493,35 @@ async def tag_all(sample, fetched, concurrency, dry_run) -> list[Tagged]:
                               fetch_pass=f.fetch_pass if f else "none"))
         return out
 
-    client = make_client()
-    sem = asyncio.Semaphore(concurrency)
-    tasks = []
+    results = []
+    readable = []
     for cf, name, att, _at, url, _com in sample:
         f = fetched.get(cf)
         text = f.text if f else ""
         bucket = f.fetch_bucket if f else "DEAD"
         note = f"{bucket}/{f.note}" if f else "not fetched"
-        tasks.append(tag_one(client, sem, cf, name, att, url, text, note, bucket,
-                             f.fetch_pass if f else "none"))
+        fetch_pass = f.fetch_pass if f else "none"
+        if bucket == "DEAD" or not text:
+            # With no homepage evidence, sending the name and broad ATECO label
+            # invites a confident guess. Do not ask the model to classify it.
+            results.append(Tagged(
+                cf, name, att, url, unreadable_tags(), None,
+                page_chars=0, fetch_bucket="DEAD", fetch_pass=fetch_pass,
+            ))
+            continue
+        readable.append((cf, name, att, url, text, note, bucket, fetch_pass))
 
-    results, done = [], 0
+    if not readable:
+        return results
+
+    client = make_client()
+    sem = asyncio.Semaphore(concurrency)
+    tasks = [
+        tag_one(client, sem, cf, name, att, url, text, note, bucket, fetch_pass)
+        for cf, name, att, url, text, note, bucket, fetch_pass in readable
+    ]
+
+    done = 0
     for coro in asyncio.as_completed(tasks):
         results.append(await coro)
         done += 1

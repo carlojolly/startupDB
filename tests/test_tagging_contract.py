@@ -105,6 +105,39 @@ def test_validation_failure_is_reasked_once():
     assert responses.calls[1]["text_format"] is tag_companies.CompanyTags
 
 
+def test_dead_homepage_is_unclear_without_calling_model(monkeypatch):
+    def unexpected_client():
+        raise AssertionError("an unreadable homepage must not reach the model")
+
+    monkeypatch.setattr(tag_companies, "make_client", unexpected_client)
+    sample = [(
+        "02781910209", "FLAB S.R.L.", "Software production",
+        "621000", "https://www.cantieresicuro.com", None,
+    )]
+    fetched = {
+        "02781910209": tag_companies.Fetched(
+            codice_fiscale="02781910209",
+            url="https://www.cantieresicuro.com",
+            text="",
+            fetch_pass="none",
+            fetch_bucket="DEAD",
+            note="dns_failure",
+        ),
+    }
+
+    [result] = asyncio.run(
+        tag_companies.tag_all(sample, fetched, concurrency=1, dry_run=False)
+    )
+
+    assert result.tags.parent_sector == ["unclear"]
+    assert result.tags.sector == "unclear"
+    assert result.tags.product_type == ["unclear"]
+    assert result.tags.customer_model == ["unclear"]
+    assert result.page_chars == 0
+    assert result.fetch_bucket == "DEAD"
+    assert result.usage is None
+
+
 def test_openai_usage_accounting_includes_prompt_cache_rates():
     usages = [
         SimpleNamespace(

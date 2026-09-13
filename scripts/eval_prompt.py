@@ -24,6 +24,7 @@ LABEL_COLUMNS = [
     "codice_fiscale", "parent_sector", "sector", "product_type",
     "customer_model",
 ]
+LABEL_COLUMNS_WITH_NAME = ["codice_fiscale", "denominazione", *LABEL_COLUMNS[1:]]
 SCORED_FIELDS = ("parent_sector", "product_type", "customer_model")
 
 
@@ -45,10 +46,10 @@ def load_labels(path: pathlib.Path) -> dict[str, dict[str, object]]:
     try:
         with path.open(encoding="utf-8-sig", newline="") as fh:
             reader = csv.DictReader(fh)
-            if reader.fieldnames != LABEL_COLUMNS:
+            if reader.fieldnames not in (LABEL_COLUMNS, LABEL_COLUMNS_WITH_NAME):
                 raise ValueError(
                     f"Unexpected label columns in {path}: {reader.fieldnames}; "
-                    f"expected {LABEL_COLUMNS}"
+                    f"expected {LABEL_COLUMNS} (optionally with denominazione)"
                 )
             rows = list(reader)
     except FileNotFoundError:

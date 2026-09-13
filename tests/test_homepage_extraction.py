@@ -31,6 +31,24 @@ def test_extractor_removes_navigation_cookie_and_footer_boilerplate():
     assert "Privacy Legal Social" not in extractor.text
 
 
+def test_extractor_uses_first_party_description_when_visible_page_is_empty():
+    extractor = TextExtractor()
+    extractor.feed("""
+        <html><head>
+          <title>Convivium — Ecommerce contadino</title>
+          <meta property="og:description"
+                content="Frutta, verdura e prodotti di produttori locali, dal campo alla tavola.">
+          <meta name="description"
+                content="Frutta, verdura e prodotti di produttori locali, dal campo alla tavola.">
+        </head><body><form>Password</form></body></html>
+    """)
+
+    assert extractor.text == (
+        "Convivium — Ecommerce contadino Frutta, verdura e prodotti di "
+        "produttori locali, dal campo alla tavola."
+    )
+
+
 def test_redirect_domain_comparison_allows_subdomains_but_not_other_sites():
     assert is_same_site("https://example.it", "https://www.example.it/about")
     assert is_same_site("https://www.example.co.uk", "https://shop.example.co.uk")

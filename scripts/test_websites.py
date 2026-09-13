@@ -107,6 +107,14 @@ class TextExtractor:
             return
 
         self.title = _normalise_text(" ".join(document.xpath("//title/text()")))
+        descriptions = []
+        for element in document.xpath("//meta[@content]"):
+            key = (element.get("name") or element.get("property") or "").lower()
+            if key not in {"description", "og:description", "twitter:description"}:
+                continue
+            value = _normalise_text(element.get("content") or "")
+            if value and value not in descriptions:
+                descriptions.append(value)
         for element in list(document.iter()):
             tag = element.tag.lower() if isinstance(element.tag, str) else ""
             role = (element.get("role") or "").lower()
@@ -133,6 +141,12 @@ class TextExtractor:
             include_tables=False, deduplicate=True, favor_recall=True,
         ) or "")
         self._text = main_text if len(main_text) >= THIN_TEXT_CHARS else fallback
+        if len(self._text) < THIN_TEXT_CHARS and descriptions:
+            # Password/coming-soon shells sometimes have no visible body while
+            # retaining a first-party description of the actual business.
+            self._text = _normalise_text(" ".join(
+                [self.title, *descriptions, self._text]
+            ))
 
     @property
     def text(self) -> str:

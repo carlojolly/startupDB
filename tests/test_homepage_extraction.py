@@ -17,6 +17,9 @@ def test_extractor_removes_navigation_cookie_and_footer_boilerplate():
         <html><head><title>Useful Company</title></head><body>
           <nav>Products About Contact Products About Contact</nav>
           <div class="cookie-banner">Accept every cookie Privacy Settings</div>
+          <div id="cookieSetting" class="cookie-setting">
+            Necessary Analytics Marketing Personalisation
+          </div>
           <main><h1>Industrial water recovery</h1>
             <p>We build mobile filtration systems for factories.</p></main>
           <footer>Privacy Legal Social Contact</footer>
@@ -27,6 +30,7 @@ def test_extractor_removes_navigation_cookie_and_footer_boilerplate():
     assert "Industrial water recovery" in extractor.text
     assert "mobile filtration systems" in extractor.text
     assert "Accept every cookie" not in extractor.text
+    assert "Necessary Analytics Marketing" not in extractor.text
     assert "Products About Contact" not in extractor.text
     assert "Privacy Legal Social" not in extractor.text
 

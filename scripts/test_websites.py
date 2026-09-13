@@ -66,7 +66,7 @@ NOISE_TOKENS = {
 }
 NOISE_PREFIXES = (
     "onetrust", "iubenda", "cookiebot", "cmplz-", "cky-", "cookiefirst",
-    "cookieyes",
+    "cookieyes", "cookie-setting", "cookiesetting",
 )
 
 

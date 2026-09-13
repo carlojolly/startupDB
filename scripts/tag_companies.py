@@ -423,6 +423,7 @@ async def tag_one(client, sem, cf, name, attivita, url, page_text,
             try:
                 response = await client.responses.parse(
                     model=MODEL,
+                    temperature=0,
                     max_output_tokens=1024,
                     reasoning={"effort": "none"},
                     input=[

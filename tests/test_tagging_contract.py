@@ -103,6 +103,7 @@ def test_validation_failure_is_reasked_once():
         responses.calls[1]["input"][1]["content"]
     )
     assert responses.calls[1]["text_format"] is tag_companies.CompanyTags
+    assert all(call["temperature"] == 0 for call in responses.calls)
 
 
 def test_dead_homepage_is_unclear_without_calling_model(monkeypatch):

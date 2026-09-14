@@ -373,6 +373,23 @@ ground truth. Validated outputs, inputs, hashes, and the report are written
 under the git-ignored `data/batch_quality/` directory; it never writes to
 Postgres or evaluates against the frozen scored sample.
 
+### Full-registry Batch run
+
+After that gate passes, run all 9,620 companies with usable registry URLs:
+
+```bash
+python scripts/tag_registry_batch.py run --write
+```
+
+Fetches are checkpointed every 500 companies under the git-ignored
+`data/registry_batch/` directory. Terra produces the taxonomy and Luna produces
+VC relevance using the same validated requests as the quality gate. A failed or
+invalid response receives one corrective Batch retry. Results enter Postgres in
+one transaction only after every company is present and valid; the job refuses
+to submit if the gate, prompts, models, source CSV, or request files changed.
+Model work is submitted in sequential 400-company parts so the job also fits
+lower-tier Batch queue limits.
+
 ## Known data quirks
 
 The registry export is messier than it looks. The full findings are in

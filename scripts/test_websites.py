@@ -25,11 +25,16 @@ import csv
 import datetime
 import pathlib
 import random
+import re
 import sys
-from dataclasses import dataclass, asdict
-from html.parser import HTMLParser
+from dataclasses import dataclass, asdict, field
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
+from courlan import extract_domain
+from lxml import html as lxml_html
+from lxml.etree import ParserError
+from trafilatura import extract
 
 from db import connect, REPO_ROOT
 
@@ -49,48 +54,244 @@ THIN_TEXT_CHARS = 500
 # Never read more than this from any single response.
 MAX_BYTES = 2_000_000
 
-SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "head"}
+DROP_TAGS = {
+    "script", "style", "noscript", "template", "svg", "nav", "footer",
+    "aside", "dialog", "form",
+}
+NOISE_TOKENS = {
+    "cookie", "cookies", "cookie-banner", "cookie-modal", "cookie-notice",
+    "cookie-consent", "consent-banner", "consent-modal", "gdpr-banner",
+    "privacy-banner", "cc-window", "cc-banner", "newsletter-popup",
+    "cc_div", "cm_inner",
+}
+NOISE_PREFIXES = (
+    "onetrust", "iubenda", "cookiebot", "cmplz-", "cky-", "cookiefirst",
+    "cookieyes", "cookie-setting", "cookiesetting",
+)
 
 
-class TextExtractor(HTMLParser):
-    """Pull visible text and the <title> out of an HTML document.
+def _noise_container(element) -> bool:
+    attributes = " ".join((element.get("id") or "", element.get("class") or ""))
+    tokens = {token for token in re.split(r"[^a-z0-9_-]+", attributes.lower())
+              if token}
+    return bool(
+        tokens & NOISE_TOKENS
+        or any(token.startswith(NOISE_PREFIXES) for token in tokens)
+    )
 
-    Uses the standard library rather than BeautifulSoup/lxml so the repo keeps
-    a small, reliably-installable dependency set.
+
+def _normalise_text(text: str) -> str:
+    return " ".join(text.split())
+
+
+class TextExtractor:
+    """Extract the page's own main content and title.
+
+    A small structural pass removes known non-content containers. Semantic
+    <main> content wins when present; Trafilatura handles pages without useful
+    landmarks and malformed real-world markup.
     """
 
     def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.chunks: list[str] = []
         self.title: str = ""
-        self._skip_depth = 0
-        self._in_title = False
+        self._text: str = ""
 
-    def handle_starttag(self, tag, attrs):
-        if tag in SKIP_TAGS:
-            self._skip_depth += 1
-        if tag == "title":
-            self._in_title = True
+    def feed(self, source: str) -> None:
+        try:
+            document = lxml_html.fromstring(source)
+        except (ParserError, ValueError):
+            self._text = _normalise_text(extract(
+                source, output_format="txt", include_comments=False,
+                include_tables=False, deduplicate=True, favor_recall=True,
+            ) or "")
+            return
 
-    def handle_endtag(self, tag):
-        if tag in SKIP_TAGS and self._skip_depth:
-            self._skip_depth -= 1
-        if tag == "title":
-            self._in_title = False
+        self.title = _normalise_text(" ".join(document.xpath("//title/text()")))
+        descriptions = []
+        for element in document.xpath("//meta[@content]"):
+            key = (element.get("name") or element.get("property") or "").lower()
+            if key not in {"description", "og:description", "twitter:description"}:
+                continue
+            value = _normalise_text(element.get("content") or "")
+            if value and value not in descriptions:
+                descriptions.append(value)
+        for element in list(document.iter()):
+            tag = element.tag.lower() if isinstance(element.tag, str) else ""
+            role = (element.get("role") or "").lower()
+            style = (element.get("style") or "").replace(" ", "").lower()
+            hidden = (
+                tag not in {"html", "body"}
+                and (element.get("hidden") is not None
+                     or (element.get("aria-hidden") or "").lower() == "true"
+                     or "display:none" in style)
+            )
+            if (tag in DROP_TAGS or role in {"navigation", "contentinfo", "dialog"}
+                    or hidden or _noise_container(element)):
+                parent = element.getparent()
+                if parent is not None:
+                    parent.remove(element)
 
-    def handle_data(self, data):
-        if self._in_title:
-            self.title += data
-        # <head> is in SKIP_TAGS, so title text is captured above but not
-        # counted toward the visible-text total.
-        if self._skip_depth == 0:
-            text = data.strip()
-            if text:
-                self.chunks.append(text)
+        main_nodes = document.xpath("//main | //*[@role='main']")
+        main_text = _normalise_text(" ".join(
+            node.text_content() for node in main_nodes
+        ))
+        cleaned_html = lxml_html.tostring(document, encoding="unicode")
+        fallback = _normalise_text(extract(
+            cleaned_html, output_format="txt", include_comments=False,
+            include_tables=False, deduplicate=True, favor_recall=True,
+        ) or "")
+        self._text = main_text if len(main_text) >= THIN_TEXT_CHARS else fallback
+        if len(self._text) < THIN_TEXT_CHARS and descriptions:
+            # Password/coming-soon shells sometimes have no visible body while
+            # retaining a first-party description of the actual business.
+            self._text = _normalise_text(" ".join(
+                [self.title, *descriptions, self._text]
+            ))
 
     @property
     def text(self) -> str:
-        return " ".join(self.chunks)
+        return self._text
+
+
+def registrable_domain(url: str) -> str:
+    """Return the registrable domain, falling back to the normalized host."""
+    domain = extract_domain(url)
+    if domain:
+        return domain.lower().rstrip(".")
+    return (urlsplit(url).hostname or "").lower().rstrip(".")
+
+
+def is_same_site(requested_url: str, final_url: str) -> bool:
+    """Allow root/child-domain hops, but reject other domains and siblings."""
+    requested = registrable_domain(requested_url)
+    final = registrable_domain(final_url)
+    if not requested or requested != final:
+        return False
+
+    requested_host = (urlsplit(requested_url).hostname or "").lower().rstrip(".")
+    final_host = (urlsplit(final_url).hostname or "").lower().rstrip(".")
+    requested_host = requested_host.removeprefix("www.")
+    final_host = final_host.removeprefix("www.")
+    return (
+        requested_host == final_host
+        or requested_host == requested
+        or final_host == requested
+    )
+
+
+def _host_brands(url: str) -> set[str]:
+    """Return distinctive hostname labels suitable for migration checks."""
+    generic = {"www", "com", "net", "org", "cloud", "store", "app", "dev",
+               "it", "eu", "io", "ai", "co", "launch", "shop"}
+    return {
+        "".join(character for character in label if character.isalnum())
+        for label in (urlsplit(url).hostname or "").lower().split(".")
+        if len(label) >= 5 and label not in generic
+    }
+
+
+def page_identifies_company(codice_fiscale: str, source: str, *,
+                            company_name: str = "", requested_url: str = "",
+                            final_url: str = "") -> bool:
+    """Verify that a cross-domain destination still belongs to the company.
+
+    The fiscal identifier remains the strongest signal. Two narrow domain
+    migration signals recover common registry staleness without accepting an
+    arbitrary destination: the old and new host keep the same distinctive
+    brand, or the new host begins with the company's distinctive name token.
+    """
+    expected = "".join(character for character in codice_fiscale.lower()
+                       if character.isalnum())
+    document = "".join(character for character in source.lower()
+                       if character.isalnum())
+    if len(expected) >= 8 and expected in document:
+        return True
+
+    old_brands = _host_brands(requested_url)
+    new_brands = _host_brands(final_url)
+    if old_brands & new_brands:
+        return True
+
+    legal_words = {
+        "societa", "responsabilita", "limitata", "semplificata", "benefit",
+        "startup", "start", "costituita", "norma", "srl", "srls", "spa",
+        "group", "holding", "italia", "italy", "innovation", "innovazione",
+        "digital", "technology", "technologies",
+    }
+    name_tokens = [
+        token for token in re.findall(r"[a-z0-9]+", company_name.lower())
+        if len(token) >= 5 and token not in legal_words
+    ]
+    return any(
+        brand == token or brand.startswith(token)
+        for token in name_tokens for brand in new_brands
+    )
+
+
+ERROR_PAGE_TITLE_MARKERS = (
+    "404 not found", "error 404", "database error", "ssl error",
+    "reconnect your domain", "sito non installato", "dns resolution error",
+    "web page blocked",
+)
+ERROR_PAGE_TEXT_MARKERS = (
+    "cloudflare is currently unable to resolve your requested domain",
+    "the domain is still pending setup",
+)
+
+
+def looks_like_error_page(title: str, text: str) -> bool:
+    """Recognize infrastructure pages that can otherwise look text-rich."""
+    normalized_title = _normalise_text(title).lower()
+    normalized_text = _normalise_text(text[:2_000]).lower()
+    return (
+        any(marker in normalized_title for marker in ERROR_PAGE_TITLE_MARKERS)
+        or any(marker in normalized_text for marker in ERROR_PAGE_TEXT_MARKERS)
+    )
+
+
+LINK_PRIORITIES = (
+    (4, ("prodott", "product", "serviz", "service", "solution", "soluzion",
+         "technology", "tecnologia", "platform", "piattaforma")),
+    (3, ("chi-siamo", "chisiamo", "about", "azienda", "company",
+         "cosa-facciamo", "what-we-do")),
+)
+LINK_REJECT = (
+    "privacy", "cookie", "contact", "contatt", "login", "signin", "signup",
+    "account", "cart", "checkout", "terms", "legal", "blog", "news",
+    "press", "career", "lavora", "facebook", "instagram", "linkedin",
+)
+
+
+def promising_internal_links(source: str, base_url: str,
+                             limit: int = 3) -> list[str]:
+    """Find a few same-site pages likely to explain the company or offering."""
+    try:
+        document = lxml_html.fromstring(source)
+    except (ParserError, ValueError):
+        return []
+
+    ranked: dict[str, int] = {}
+    for anchor in document.xpath("//a[@href]"):
+        href = (anchor.get("href") or "").strip()
+        if not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
+            continue
+        absolute = urljoin(base_url, href)
+        parts = urlsplit(absolute)
+        if parts.scheme not in {"http", "https"} or not is_same_site(base_url, absolute):
+            continue
+        clean_url = urlunsplit((parts.scheme, parts.netloc, parts.path or "/", "", ""))
+        if clean_url.rstrip("/") == base_url.rstrip("/"):
+            continue
+        clue = " ".join((parts.path, anchor.text_content())).lower()
+        if any(word in clue for word in LINK_REJECT):
+            continue
+        score = max((priority for priority, words in LINK_PRIORITIES
+                     if any(word in clue for word in words)), default=0)
+        if score:
+            ranked[clean_url] = max(score, ranked.get(clean_url, 0))
+    return [url for url, _score in sorted(
+        ranked.items(), key=lambda item: (-item[1], len(item[0]), item[0])
+    )[:limit]]
 
 
 @dataclass
@@ -112,6 +313,7 @@ class Result:
     # reachability sweep does not hold hundreds of pages in memory, and so the
     # results CSV stays small. scripts/tag_companies.py opts in.
     page_text: str = ""
+    followup_urls: list[str] = field(default_factory=list)
 
 
 def classify_exception(exc: BaseException) -> str:
@@ -208,20 +410,51 @@ async def check_one(client: httpx.AsyncClient, sem: asyncio.Semaphore,
                 result.reason = f"not_html:{content_type}"
                 break
 
+            source = decode(body, response)
+            offsite_redirect = not is_same_site(candidate, result.final_url)
+            if offsite_redirect:
+                result.detail = (
+                    f"{registrable_domain(candidate)} -> "
+                    f"{registrable_domain(result.final_url)}"
+                )
+                if not page_identifies_company(
+                    cf, source, company_name=name, requested_url=candidate,
+                    final_url=result.final_url,
+                ):
+                    result.bucket = "DEAD"
+                    result.reason = "offsite_redirect"
+                    break
+
             parser = TextExtractor()
             try:
-                parser.feed(decode(body, response))
+                parser.feed(source)
             except Exception as exc:  # malformed markup
                 result.detail = f"parse:{type(exc).__name__}"
             result.text_chars = len(parser.text)
             result.title = " ".join(parser.title.split())[:120]
+            if looks_like_error_page(result.title, parser.text):
+                result.bucket = "DEAD"
+                result.reason = "error_page"
+                result.text_chars = 0
+                result.page_text = ""
+                break
             if keep_text:
                 result.page_text = parser.text
+                result.followup_urls = promising_internal_links(
+                    source, result.final_url or candidate
+                )
 
             if result.text_chars >= THIN_TEXT_CHARS:
-                result.bucket, result.reason = "OK", "ok"
+                result.bucket = "OK"
+                result.reason = (
+                    "verified_offsite_redirect" if offsite_redirect else "ok"
+                )
             else:
-                result.bucket, result.reason = "THIN", "little_text"
+                result.bucket = "THIN"
+                result.reason = (
+                    "verified_offsite_redirect_little_text"
+                    if offsite_redirect else "little_text"
+                )
             break
         else:
             result.bucket = "DEAD"
@@ -329,13 +562,15 @@ def save_csv(results: list[Result], out_path: pathlib.Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # page_text is deliberately excluded: it would balloon the file and it is
     # not what this measurement is about.
-    fields = [f for f in asdict(results[0]).keys() if f != "page_text"]
+    fields = [f for f in asdict(results[0]).keys()
+              if f not in {"page_text", "followup_urls"}]
     with out_path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields)
         writer.writeheader()
         for r in sorted(results, key=lambda x: (x.bucket, -x.text_chars)):
             row = asdict(r)
             row.pop("page_text", None)
+            row.pop("followup_urls", None)
             writer.writerow(row)
 
 

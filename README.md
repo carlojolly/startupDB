@@ -284,17 +284,15 @@ ORDER BY observed_on DESC LIMIT 50;
 The registry's own classification is too coarse to search on — 44% of the
 database is ATECO 621000, which cannot separate a B2B SaaS product from an IT
 consultancy. `scripts/tag_companies.py` reads each company's homepage and asks
-Claude for a specific sub-sector, business model, product type and one-line
-description.
+OpenAI for a specific sub-sector, parent sector, product type, customer model
+and one-line description.
 
-It needs `ANTHROPIC_API_KEY` in `.env` (create one at
-[console.anthropic.com](https://console.anthropic.com/settings/keys)). If your
-key is identity-linked rather than an organization key, also set
-`ANTHROPIC_WORKSPACE_ID` — the API returns a 400 telling you so.
+It needs `OPENAI_API_KEY` in `.env` (create one at
+[platform.openai.com/api-keys](https://platform.openai.com/api-keys)).
 
 ```bash
 python scripts/tag_companies.py --dry-run    # whole pipeline, no API calls, no cost
-python scripts/tag_companies.py              # 50 companies, writes to the database
+python scripts/tag_companies.py              # frozen 200, writes to the database
 ```
 
 ### The homepage fetch runs in two passes
@@ -337,6 +335,25 @@ prompt or the schema.
 ```bash
 python scripts/export_tags.py --run-id 4     # export any run to data/*.csv
 ```
+
+### VC relevance screening
+
+`scripts/score_vc_relevance.py` is a separate structured pass that labels each
+company `high`, `medium`, `low`, or `unclear` and records a short homepage-based
+rationale. Keeping it separate prevents investment-screening criteria from
+changing the frozen sector prompt. After a complete 200-company tagging run,
+attach the VC fields to that same run so `current_company_tags` continues to
+expose both kinds of label:
+
+```bash
+python scripts/score_vc_relevance.py \
+  --sample-file data/sample_200_2026-09-06.csv \
+  --attach-to-run-id RUN_ID
+```
+
+The command accepts database writes only for the exact frozen 200-company set
+and refuses to overwrite VC labels already attached to a run. Without
+`--attach-to-run-id`, it only writes a local review CSV.
 
 ## Known data quirks
 

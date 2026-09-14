@@ -84,3 +84,31 @@ def test_database_rows_include_ordered_taxonomy_and_vc():
     assert [row[2] for row in rows][-2:] == [
         "vc_relevance", "vc_relevance_reason",
     ]
+
+
+def test_submit_part_creates_its_artifact_directory(tmp_path, monkeypatch):
+    row = ("01234567890", "EXAMPLE S.R.L.", "software", "621000",
+           "https://example.it", "Milano")
+    page = tag_registry_batch.tag_companies.Fetched(
+        codice_fiscale=row[0], url=row[4], text="Homepage",
+        fetch_pass="http", fetch_bucket="OK", note="ok",
+    )
+    state_path = tmp_path / "state.json"
+    state = {"run_dir": str(tmp_path / "run"), "batch_chunk_size": 400,
+             "parts": []}
+    uploaded = []
+
+    def fake_upload(_client, kind, path, _purpose):
+        assert path.exists()
+        uploaded.append(kind)
+        return f"batch-{kind}", f"file-{kind}"
+
+    monkeypatch.setattr(tag_registry_batch, "upload", fake_upload)
+    submitted = tag_registry_batch.submit_next_part(
+        state_path, state, [row], {row[0]: page}, object()
+    )
+
+    assert submitted is True
+    assert uploaded == ["taxonomy", "vc"]
+    assert (tmp_path / "run" / "parts" / "0000" /
+            "taxonomy_requests.jsonl").exists()

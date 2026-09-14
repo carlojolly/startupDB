@@ -238,6 +238,7 @@ def submit_next_part(state_path: pathlib.Path, state: dict[str, Any],
         state["parts"].append(part)
         json_dump(state_path, state)
     part_dir = pathlib.Path(state["run_dir"]) / "parts" / f"{part_index:04d}"
+    part_dir.mkdir(parents=True, exist_ok=True)
     inputs = batch_common.write_batch_inputs(part_dir, part_sample, pages)
     print(f"Submitting Batch part {part_index + 1}/"
           f"{(len(sample) + state['batch_chunk_size'] - 1) // state['batch_chunk_size']} "

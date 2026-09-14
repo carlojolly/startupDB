@@ -27,8 +27,8 @@ import pathlib
 import random
 import re
 import sys
-from dataclasses import dataclass, asdict
-from urllib.parse import urlsplit
+from dataclasses import dataclass, asdict, field
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 from courlan import extract_domain
@@ -179,13 +179,119 @@ def is_same_site(requested_url: str, final_url: str) -> bool:
     )
 
 
-def page_identifies_company(codice_fiscale: str, source: str) -> bool:
-    """Verify a redirected page with the company's exact fiscal identifier."""
+def _host_brands(url: str) -> set[str]:
+    """Return distinctive hostname labels suitable for migration checks."""
+    generic = {"www", "com", "net", "org", "cloud", "store", "app", "dev",
+               "it", "eu", "io", "ai", "co", "launch", "shop"}
+    return {
+        "".join(character for character in label if character.isalnum())
+        for label in (urlsplit(url).hostname or "").lower().split(".")
+        if len(label) >= 5 and label not in generic
+    }
+
+
+def page_identifies_company(codice_fiscale: str, source: str, *,
+                            company_name: str = "", requested_url: str = "",
+                            final_url: str = "") -> bool:
+    """Verify that a cross-domain destination still belongs to the company.
+
+    The fiscal identifier remains the strongest signal. Two narrow domain
+    migration signals recover common registry staleness without accepting an
+    arbitrary destination: the old and new host keep the same distinctive
+    brand, or the new host begins with the company's distinctive name token.
+    """
     expected = "".join(character for character in codice_fiscale.lower()
                        if character.isalnum())
     document = "".join(character for character in source.lower()
                        if character.isalnum())
-    return len(expected) >= 8 and expected in document
+    if len(expected) >= 8 and expected in document:
+        return True
+
+    old_brands = _host_brands(requested_url)
+    new_brands = _host_brands(final_url)
+    if old_brands & new_brands:
+        return True
+
+    legal_words = {
+        "societa", "responsabilita", "limitata", "semplificata", "benefit",
+        "startup", "start", "costituita", "norma", "srl", "srls", "spa",
+        "group", "holding", "italia", "italy", "innovation", "innovazione",
+        "digital", "technology", "technologies",
+    }
+    name_tokens = [
+        token for token in re.findall(r"[a-z0-9]+", company_name.lower())
+        if len(token) >= 5 and token not in legal_words
+    ]
+    return any(
+        brand == token or brand.startswith(token)
+        for token in name_tokens for brand in new_brands
+    )
+
+
+ERROR_PAGE_TITLE_MARKERS = (
+    "404 not found", "error 404", "database error", "ssl error",
+    "reconnect your domain", "sito non installato", "dns resolution error",
+    "web page blocked",
+)
+ERROR_PAGE_TEXT_MARKERS = (
+    "cloudflare is currently unable to resolve your requested domain",
+    "the domain is still pending setup",
+)
+
+
+def looks_like_error_page(title: str, text: str) -> bool:
+    """Recognize infrastructure pages that can otherwise look text-rich."""
+    normalized_title = _normalise_text(title).lower()
+    normalized_text = _normalise_text(text[:2_000]).lower()
+    return (
+        any(marker in normalized_title for marker in ERROR_PAGE_TITLE_MARKERS)
+        or any(marker in normalized_text for marker in ERROR_PAGE_TEXT_MARKERS)
+    )
+
+
+LINK_PRIORITIES = (
+    (4, ("prodott", "product", "serviz", "service", "solution", "soluzion",
+         "technology", "tecnologia", "platform", "piattaforma")),
+    (3, ("chi-siamo", "chisiamo", "about", "azienda", "company",
+         "cosa-facciamo", "what-we-do")),
+)
+LINK_REJECT = (
+    "privacy", "cookie", "contact", "contatt", "login", "signin", "signup",
+    "account", "cart", "checkout", "terms", "legal", "blog", "news",
+    "press", "career", "lavora", "facebook", "instagram", "linkedin",
+)
+
+
+def promising_internal_links(source: str, base_url: str,
+                             limit: int = 3) -> list[str]:
+    """Find a few same-site pages likely to explain the company or offering."""
+    try:
+        document = lxml_html.fromstring(source)
+    except (ParserError, ValueError):
+        return []
+
+    ranked: dict[str, int] = {}
+    for anchor in document.xpath("//a[@href]"):
+        href = (anchor.get("href") or "").strip()
+        if not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
+            continue
+        absolute = urljoin(base_url, href)
+        parts = urlsplit(absolute)
+        if parts.scheme not in {"http", "https"} or not is_same_site(base_url, absolute):
+            continue
+        clean_url = urlunsplit((parts.scheme, parts.netloc, parts.path or "/", "", ""))
+        if clean_url.rstrip("/") == base_url.rstrip("/"):
+            continue
+        clue = " ".join((parts.path, anchor.text_content())).lower()
+        if any(word in clue for word in LINK_REJECT):
+            continue
+        score = max((priority for priority, words in LINK_PRIORITIES
+                     if any(word in clue for word in words)), default=0)
+        if score:
+            ranked[clean_url] = max(score, ranked.get(clean_url, 0))
+    return [url for url, _score in sorted(
+        ranked.items(), key=lambda item: (-item[1], len(item[0]), item[0])
+    )[:limit]]
 
 
 @dataclass
@@ -207,6 +313,7 @@ class Result:
     # reachability sweep does not hold hundreds of pages in memory, and so the
     # results CSV stays small. scripts/tag_companies.py opts in.
     page_text: str = ""
+    followup_urls: list[str] = field(default_factory=list)
 
 
 def classify_exception(exc: BaseException) -> str:
@@ -310,7 +417,10 @@ async def check_one(client: httpx.AsyncClient, sem: asyncio.Semaphore,
                     f"{registrable_domain(candidate)} -> "
                     f"{registrable_domain(result.final_url)}"
                 )
-                if not page_identifies_company(cf, source):
+                if not page_identifies_company(
+                    cf, source, company_name=name, requested_url=candidate,
+                    final_url=result.final_url,
+                ):
                     result.bucket = "DEAD"
                     result.reason = "offsite_redirect"
                     break
@@ -322,8 +432,17 @@ async def check_one(client: httpx.AsyncClient, sem: asyncio.Semaphore,
                 result.detail = f"parse:{type(exc).__name__}"
             result.text_chars = len(parser.text)
             result.title = " ".join(parser.title.split())[:120]
+            if looks_like_error_page(result.title, parser.text):
+                result.bucket = "DEAD"
+                result.reason = "error_page"
+                result.text_chars = 0
+                result.page_text = ""
+                break
             if keep_text:
                 result.page_text = parser.text
+                result.followup_urls = promising_internal_links(
+                    source, result.final_url or candidate
+                )
 
             if result.text_chars >= THIN_TEXT_CHARS:
                 result.bucket = "OK"
@@ -443,13 +562,15 @@ def save_csv(results: list[Result], out_path: pathlib.Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # page_text is deliberately excluded: it would balloon the file and it is
     # not what this measurement is about.
-    fields = [f for f in asdict(results[0]).keys() if f != "page_text"]
+    fields = [f for f in asdict(results[0]).keys()
+              if f not in {"page_text", "followup_urls"}]
     with out_path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields)
         writer.writeheader()
         for r in sorted(results, key=lambda x: (x.bucket, -x.text_chars)):
             row = asdict(r)
             row.pop("page_text", None)
+            row.pop("followup_urls", None)
             writer.writerow(row)
 
 

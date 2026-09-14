@@ -187,6 +187,21 @@ def test_openai_usage_accounting_includes_prompt_cache_rates():
     )
 
 
+def test_luna_model_selection_updates_usage_prices():
+    original = tag_companies.MODEL
+    try:
+        tag_companies.configure_model("gpt-5.6-luna")
+        assert tag_companies.MODEL == "gpt-5.6-luna"
+        assert (
+            tag_companies.PRICE_IN_PER_MTOK,
+            tag_companies.PRICE_CACHED_IN_PER_MTOK,
+            tag_companies.PRICE_CACHE_WRITE_PER_MTOK,
+            tag_companies.PRICE_OUT_PER_MTOK,
+        ) == (0.20, 0.02, 0.25, 1.20)
+    finally:
+        tag_companies.configure_model(original)
+
+
 def test_prompt_matches_multi_value_contract_and_keeps_precedence():
     prompt = tag_companies.SYSTEM_PROMPT
     assert "are LISTS of one or two" in prompt
@@ -241,6 +256,21 @@ def test_export_pipe_joins_two_values_in_model_order():
 
     assert row[5] == "climate_energy_circular|food_agriculture"
     assert row[7] == "software_product|hardware_device"
+
+
+def test_enriched_export_appends_vc_relevance_and_reason():
+    db_row = (
+        "02201200678", "Example S.R.L.", "621000", "Software",
+        "https://example.it", ["business_software"], ["workflow software"],
+        ["software_product"], ["b2b"], None, ["Automates workflows."],
+        "http", "OK", 1234, "evidence", ["high"],
+        ["Repeatable software with validated demand."],
+    )
+    row = export_tags._export_row(db_row, run_id=13, include_vc=True)
+    assert export_tags.VC_COLUMNS[-2:] == [
+        "vc_relevance", "vc_relevance_reason",
+    ]
+    assert row[-2:] == ["high", "Repeatable software with validated demand."]
 
 
 def test_export_uses_url_and_provenance_recorded_with_run():

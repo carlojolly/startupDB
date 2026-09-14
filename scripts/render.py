@@ -17,7 +17,8 @@ import asyncio
 from dataclasses import dataclass
 
 from test_websites import (
-    TextExtractor, USER_AGENT, is_same_site, registrable_domain,
+    TextExtractor, USER_AGENT, is_same_site, looks_like_error_page,
+    promising_internal_links, registrable_domain,
 )
 
 # Assets that cannot contribute text. Blocking them cuts render time
@@ -34,6 +35,8 @@ class Rendered:
     ok: bool = False
     note: str = ""          # 'via-http', 'no-networkidle', or an exception name
     elapsed_ms: int = 0
+    followup_urls: list[str] | None = None
+    status_code: int | None = None
 
 
 def candidates(url: str) -> list[str]:
@@ -66,7 +69,13 @@ async def _render_one(context, url: str, settle_ms: int, timeout_ms: int) -> Ren
         for candidate in candidates(url):
             note = "" if candidate.startswith("https") else "via-http"
             try:
-                await page.goto(candidate, wait_until="domcontentloaded", timeout=timeout_ms)
+                response = await page.goto(
+                    candidate, wait_until="domcontentloaded", timeout=timeout_ms
+                )
+                result.status_code = response.status if response else None
+                if result.status_code is not None and result.status_code >= 400:
+                    last = f"http_{result.status_code}"
+                    continue
                 try:
                     await page.wait_for_load_state("networkidle", timeout=settle_ms)
                 except Exception:
@@ -80,10 +89,18 @@ async def _render_one(context, url: str, settle_ms: int, timeout_ms: int) -> Ren
                         f"{registrable_domain(result.final_url)}"
                     )
                     break
+                source = await page.content()
                 parser = TextExtractor()
-                parser.feed(await page.content())
+                parser.feed(source)
                 result.text = parser.text
                 result.title = " ".join((await page.title() or "").split())[:120]
+                if looks_like_error_page(result.title, result.text):
+                    result.text = ""
+                    result.note = "error_page"
+                    break
+                result.followup_urls = promising_internal_links(
+                    source, result.final_url
+                )
                 result.ok = True
                 result.note = note
                 break
@@ -92,7 +109,12 @@ async def _render_one(context, url: str, settle_ms: int, timeout_ms: int) -> Ren
         else:
             result.note = last
     finally:
-        await page.close()
+        # Chromium can occasionally wedge while closing a broken page. Do not
+        # let one renderer hold the entire batch indefinitely.
+        try:
+            await asyncio.wait_for(page.close(), timeout=3)
+        except Exception:  # noqa: BLE001
+            pass
         result.elapsed_ms = int((loop.time() - started) * 1000)
     return result
 
@@ -136,7 +158,18 @@ async def render_many(urls: list[str], concurrency: int = 4, settle_ms: int = 80
 
         async def guarded(url: str) -> Rendered:
             async with semaphore:
-                return await _render_one(context, url, settle_ms, timeout_ms)
+                # This caps the whole item, including the http fallback and
+                # cleanup. Playwright's navigation timeout does not cover every
+                # browser operation, and malformed sites have wedged here in a
+                # real 200-company run.
+                total_timeout = (timeout_ms + settle_ms + 5_000) / 1_000
+                try:
+                    return await asyncio.wait_for(
+                        _render_one(context, url, settle_ms, timeout_ms),
+                        timeout=total_timeout,
+                    )
+                except TimeoutError:
+                    return Rendered(url=url, note="total-timeout")
 
         done = 0
         tasks = [asyncio.create_task(guarded(u)) for u in urls]

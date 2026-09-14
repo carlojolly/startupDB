@@ -25,6 +25,7 @@ COLUMNS = [
     "customer_model", "one_line", "fetch_pass", "fetch_bucket",
     "homepage_chars",
 ]
+VC_COLUMNS = [*COLUMNS, "vc_relevance", "vc_relevance_reason"]
 
 CONTRACT_ROW_COUNT = 200
 
@@ -71,11 +72,12 @@ def _provenance(current_url, fetch_pass, fetch_bucket, homepage_chars,
     return website_url, fetch_pass, fetch_bucket, homepage_chars
 
 
-def _write_csv(path: pathlib.Path, rows: list[list[object]]) -> None:
+def _write_csv(path: pathlib.Path, rows: list[list[object]],
+               columns: list[str] = COLUMNS) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.writer(fh, lineterminator="\n")
-        writer.writerow(COLUMNS)
+        writer.writerow(columns)
         writer.writerows(rows)
 
 
@@ -110,11 +112,11 @@ def _single_value(values, default: str, field: str,
     return values[0]
 
 
-def _export_row(db_row, run_id: int) -> list[object]:
+def _export_row(db_row, run_id: int, include_vc: bool = False) -> list[object]:
     """Convert one ordered database aggregate into a contract CSV row."""
     (cf, name, ateco, attivita, current_url, parent_sectors, sectors,
      product_types, customer_models, legacy_business_models, one_lines,
-     fetch_pass, fetch_bucket, homepage_chars, evidence) = db_row
+     fetch_pass, fetch_bucket, homepage_chars, evidence) = db_row[:15]
 
     parent_sectors = parent_sectors or ["unclear"]
     product_types = product_types or ["unclear"]
@@ -122,7 +124,7 @@ def _export_row(db_row, run_id: int) -> list[object]:
     website_url, fetch_pass, fetch_bucket, homepage_chars = _provenance(
         current_url, fetch_pass, fetch_bucket, homepage_chars, evidence
     )
-    return [
+    row = [
         str(cf), name, ateco, attivita, website_url,
         _join_multi_value(parent_sectors, "parent_sector", run_id, str(cf)),
         _single_value(sectors, "unclear", "sector", run_id, str(cf)),
@@ -135,6 +137,14 @@ def _export_row(db_row, run_id: int) -> list[object]:
         ),
         fetch_pass, fetch_bucket, homepage_chars,
     ]
+    if include_vc:
+        vc_values = db_row[15] if len(db_row) > 15 else None
+        vc_reasons = db_row[16] if len(db_row) > 16 else None
+        row.extend([
+            _single_value(vc_values, "unclear", "vc_relevance", run_id, str(cf)),
+            _single_value(vc_reasons, "", "vc_relevance_reason", run_id, str(cf)),
+        ])
+    return row
 
 
 def main() -> None:
@@ -145,6 +155,8 @@ def main() -> None:
     parser.add_argument("--tool", default="codex",
                         help="Tool name used in the contract filename (default: codex)")
     parser.add_argument("--out", type=pathlib.Path, default=None)
+    parser.add_argument("--include-vc", action="store_true",
+                        help="Append VC relevance and rationale for dashboard use")
     args = parser.parse_args()
 
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", args.tool):
@@ -187,7 +199,11 @@ def main() -> None:
                    max(t.fetch_pass),
                    max(t.fetch_bucket),
                    max(t.homepage_chars),
-                   max(t.evidence)
+                   max(t.evidence),
+                   array_agg(t.tag_value ORDER BY t.id)
+                       FILTER (WHERE t.tag_type = 'vc_relevance'),
+                   array_agg(t.tag_value ORDER BY t.id)
+                       FILTER (WHERE t.tag_type = 'vc_relevance_reason')
             FROM company_tags t
             JOIN companies_current c USING (codice_fiscale)
             WHERE t.run_id = %s
@@ -199,19 +215,21 @@ def main() -> None:
 
     _require_contract_row_count(db_rows, run_id)
 
-    rows = [_export_row(db_row, run_id) for db_row in db_rows]
+    rows = [_export_row(db_row, run_id, include_vc=args.include_vc)
+            for db_row in db_rows]
 
     out = args.out or (
         REPO_ROOT / "data" /
         f"tags_{args.tool}_r{run_id}_{datetime.date.today():%Y-%m-%d}.csv"
     )
-    _write_csv(out, rows)
+    columns = VC_COLUMNS if args.include_vc else COLUMNS
+    _write_csv(out, rows, columns)
 
     model, prompt_version, finished_at, tagged = meta
     finished = finished_at.strftime("%Y-%m-%d %H:%M") if finished_at else "unfinished"
     print(f"tag_run {run_id}: model={model} prompt={prompt_version} "
           f"finished={finished} companies_tagged={tagged}")
-    print(f"Wrote {len(rows)} rows x {len(COLUMNS)} columns")
+    print(f"Wrote {len(rows)} rows x {len(columns)} columns")
     print(f"\n{out}")
 
 

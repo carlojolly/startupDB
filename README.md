@@ -336,6 +336,25 @@ prompt or the schema.
 python scripts/export_tags.py --run-id 4     # export any run to data/*.csv
 ```
 
+### VC relevance screening
+
+`scripts/score_vc_relevance.py` is a separate structured pass that labels each
+company `high`, `medium`, `low`, or `unclear` and records a short homepage-based
+rationale. Keeping it separate prevents investment-screening criteria from
+changing the frozen sector prompt. After a complete 200-company tagging run,
+attach the VC fields to that same run so `current_company_tags` continues to
+expose both kinds of label:
+
+```bash
+python scripts/score_vc_relevance.py \
+  --sample-file data/sample_200_2026-09-06.csv \
+  --attach-to-run-id RUN_ID
+```
+
+The command accepts database writes only for the exact frozen 200-company set
+and refuses to overwrite VC labels already attached to a run. Without
+`--attach-to-run-id`, it only writes a local review CSV.
+
 ## Known data quirks
 
 The registry export is messier than it looks. The full findings are in

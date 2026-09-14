@@ -59,10 +59,23 @@ PROMPT_VERSION = "v5.1-product-boundaries-2026-09-13"
 # Balanced quality and cost for a benchmark whose score is classification
 # accuracy. Reasoning is disabled at the request site: this is a focused task.
 MODEL = "gpt-5.6-terra"
-PRICE_IN_PER_MTOK = 2.00
-PRICE_CACHED_IN_PER_MTOK = 0.20
-PRICE_CACHE_WRITE_PER_MTOK = 2.50
-PRICE_OUT_PER_MTOK = 12.00
+MODEL_PRICING = {
+    "gpt-5.6-terra": (2.00, 0.20, 2.50, 12.00),
+    "gpt-5.6-luna": (0.20, 0.02, 0.25, 1.20),
+}
+PRICE_IN_PER_MTOK, PRICE_CACHED_IN_PER_MTOK, \
+    PRICE_CACHE_WRITE_PER_MTOK, PRICE_OUT_PER_MTOK = MODEL_PRICING[MODEL]
+
+
+def configure_model(model: str) -> None:
+    """Select a supported comparison model and its current token prices."""
+    global MODEL, PRICE_IN_PER_MTOK, PRICE_CACHED_IN_PER_MTOK
+    global PRICE_CACHE_WRITE_PER_MTOK, PRICE_OUT_PER_MTOK
+    if model not in MODEL_PRICING:
+        raise ValueError(f"Unsupported model: {model}")
+    MODEL = model
+    (PRICE_IN_PER_MTOK, PRICE_CACHED_IN_PER_MTOK,
+     PRICE_CACHE_WRITE_PER_MTOK, PRICE_OUT_PER_MTOK) = MODEL_PRICING[model]
 
 # A page longer than this is unusual; we warn rather than silently truncating,
 # because a truncated homepage produces a confidently wrong tag.
@@ -311,6 +324,7 @@ class Fetched:
     fetch_pass: str = "none"    # http | browser | none
     fetch_bucket: str = "DEAD"  # OK | THIN | DEAD, after both passes
     note: str = ""
+    followup_urls: list[str] | None = None
 
     @property
     def chars(self) -> int:
@@ -372,11 +386,13 @@ async def fetch_all(sample: list[tuple], concurrency: int, timeout: float,
         out[cf] = Fetched(codice_fiscale=cf, url=url, text=text,
                           fetch_pass="http" if text else "none",
                           fetch_bucket=_bucket(len(text)),
-                          note=(r.reason if r else "not fetched"))
+                          note=(r.reason if r else "not fetched"),
+                          followup_urls=(r.followup_urls if r else []))
 
     needs_render = [
         f for f in out.values()
-        if f.chars < THIN_TEXT_CHARS and f.note != "offsite_redirect"
+        if f.chars < THIN_TEXT_CHARS
+        and not f.note.startswith(("offsite_redirect", "verified_offsite_redirect"))
     ]
     if not use_browser:
         print(f"  pass 2 — skipped (--no-render); {len(needs_render)} thin pages left as-is")
@@ -402,9 +418,41 @@ async def fetch_all(sample: list[tuple], concurrency: int, timeout: float,
             f.fetch_pass = "browser"
             f.fetch_bucket = _bucket(len(got.text))
             f.note = got.note
+            f.followup_urls = got.followup_urls or f.followup_urls
             if f.fetch_bucket == "OK":
                 rescued += 1
     print(f"    {rescued} pages crossed the usable threshold thanks to rendering")
+
+    crawlable = [f for f in out.values()
+                 if 0 < f.chars < THIN_TEXT_CHARS and f.followup_urls]
+    if crawlable:
+        print(f"  pass 3 — checking selected internal pages for {len(crawlable)} thin sites")
+        followups = []
+        owners = {}
+        for f in crawlable:
+            for index, followup_url in enumerate((f.followup_urls or [])[:3]):
+                key = f"{f.codice_fiscale}:{index}"
+                followups.append((key, key, "", "", followup_url, None))
+                owners[key] = f.codice_fiscale
+        secondary = await fetch_pass_one(followups, concurrency, timeout)
+        added: dict[str, list[str]] = collections.defaultdict(list)
+        for key, result in secondary.items():
+            if result.page_text:
+                added[owners[key]].append(result.page_text)
+        rescued_by_crawl = 0
+        for f in crawlable:
+            combined = [f.text]
+            for text in added.get(f.codice_fiscale, []):
+                if text not in combined and not any(text in old or old in text
+                                                    for old in combined):
+                    combined.append(text)
+            if len(combined) > 1:
+                f.text = "\n\n".join(combined)
+                f.fetch_bucket = _bucket(f.chars)
+                f.note = f"{f.note}; secondary_pages={len(combined) - 1}"
+                if f.fetch_bucket == "OK":
+                    rescued_by_crawl += 1
+        print(f"    {rescued_by_crawl} pages crossed the usable threshold thanks to internal pages")
     return out
 
 
@@ -718,11 +766,14 @@ def main() -> None:
                    help="Skip pass 2 (the browser render). Faster, but "
                         "JavaScript-only sites stay unreadable.")
     p.add_argument("--api-concurrency", type=int, default=8)
+    p.add_argument("--model", choices=MODEL_PRICING, default=MODEL,
+                   help=f"OpenAI model (default: {MODEL})")
     p.add_argument("--timeout", type=float, default=8.0)
     p.add_argument("--dry-run", action="store_true",
                    help="Exercise the whole pipeline with stub tags: no API key, no cost.")
     p.add_argument("--no-write", action="store_true", help="Skip the database write")
     args = p.parse_args()
+    configure_model(args.model)
 
     if args.limit is not None and args.limit < 1:
         p.error("--limit must be at least 1")

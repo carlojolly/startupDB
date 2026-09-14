@@ -355,6 +355,24 @@ The command accepts database writes only for the exact frozen 200-company set
 and refuses to overwrite VC labels already attached to a run. Without
 `--attach-to-run-id`, it only writes a local review CSV.
 
+### Batch quality gate
+
+Before moving registry tagging to OpenAI's discounted asynchronous Batch API,
+prove that it does not reduce categorical quality on the held-out dev set:
+
+```bash
+python scripts/eval_batch_quality.py run
+```
+
+The harness fetches each homepage once and sends the exact same saved input,
+model, prompt, schema, temperature, and reasoning settings through two normal
+controls and one Batch run. Batch passes only when no taxonomy field scores
+below both controls and its output disagreement is within normal run-to-run
+variance. The same variance rule covers VC relevance, which has no hand-labelled
+ground truth. Validated outputs, inputs, hashes, and the report are written
+under the git-ignored `data/batch_quality/` directory; it never writes to
+Postgres or evaluates against the frozen scored sample.
+
 ## Known data quirks
 
 The registry export is messier than it looks. The full findings are in

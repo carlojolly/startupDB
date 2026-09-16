@@ -10,12 +10,28 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts
 import tag_registry_batch  # noqa: E402
 
 
+class Attrs:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
 def test_registry_pool_is_clean_complete_and_stably_ordered():
     rows = tag_registry_batch.registry_rows()
     assert len(rows) == 9_620
     assert [row[0] for row in rows] == sorted(row[0] for row in rows)
     assert len({row[0] for row in rows}) == 9_620
     assert all(row[4].startswith("https://") for row in rows)
+
+
+def test_queue_limit_failure_requires_zero_processed_requests():
+    error = Attrs(code="token_limit_exceeded")
+    rejected = Attrs(status="failed", errors=Attrs(data=[error]),
+                     request_counts=Attrs(completed=0, failed=0))
+    partial = Attrs(status="failed", errors=Attrs(data=[error]),
+                    request_counts=Attrs(completed=1, failed=0))
+
+    assert tag_registry_batch.queue_limit_failure(rejected)
+    assert not tag_registry_batch.queue_limit_failure(partial)
 
 
 def test_quality_gate_must_match_prompts_and_models(tmp_path):

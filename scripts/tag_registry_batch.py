@@ -363,6 +363,49 @@ def status_line(kind: str, batch) -> str:
     return f"{kind}: {batch.status}{detail}"
 
 
+def queue_limit_failure(batch) -> bool:
+    """Return true when OpenAI rejected a whole batch before processing it."""
+    errors = getattr(getattr(batch, "errors", None), "data", None) or []
+    counts = getattr(batch, "request_counts", None)
+    return (
+        batch.status == "failed"
+        and any(getattr(error, "code", None) == "token_limit_exceeded"
+                for error in errors)
+        and (counts is None or counts.completed == counts.failed == 0)
+    )
+
+
+def resubmit_queue_limited_batches(client, state_path, state, part,
+                                   batches) -> bool:
+    """Replace only batches rejected by the organization queue-token cap."""
+    limited = {kind: batch for kind, batch in batches.items()
+               if queue_limit_failure(batch)}
+    other_bad = {kind: batch.status for kind, batch in batches.items()
+                 if batch.status != "completed" and kind not in limited}
+    if not limited or other_bad:
+        return False
+    history = part.setdefault("queue_limit_retries", {})
+    for kind in limited:
+        attempts = history.setdefault(kind, [])
+        if len(attempts) >= 6:
+            raise SystemExit(
+                f"{kind} hit the Batch queue-token limit six times; "
+                "nothing was written."
+            )
+        old_id = part["batches"][kind]
+        replacement = client.batches.create(
+            input_file_id=part["inputs"][kind]["file_id"],
+            endpoint="/v1/responses", completion_window="24h",
+            metadata={"purpose": "startup-map-full-registry",
+                      "task": kind},
+        )
+        attempts.append(old_id)
+        part["batches"][kind] = replacement.id
+        print(f"Resubmitted queue-limited {kind}: {replacement.id}")
+    json_dump(state_path, state)
+    return True
+
+
 def collect(args) -> bool | None:
     state = json_load(args.state)
     validate_state(state)
@@ -380,6 +423,8 @@ def collect(args) -> bool | None:
     for kind, batch in batches.items():
         print(status_line(kind, batch))
     if any(b.status not in TERMINAL_STATES for b in batches.values()):
+        return None
+    if resubmit_queue_limited_batches(client, args.state, state, part, batches):
         return None
     bad = {kind: b.status for kind, b in batches.items() if b.status != "completed"}
     if bad:

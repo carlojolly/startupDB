@@ -40,6 +40,10 @@ TERMINAL_STATES = {"completed", "failed", "expired", "cancelled"}
 KINDS = ("taxonomy", "vc")
 
 
+def as_list(value):
+    return value if isinstance(value, list) else [value]
+
+
 def json_dump(path: pathlib.Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n",
@@ -228,7 +232,7 @@ def submit_next_part(state_path: pathlib.Path, state: dict[str, Any],
         part_sample = [row for row in sample if row[0] in wanted]
     else:
         part_index = len(state["parts"])
-        start = part_index * state["batch_chunk_size"]
+        start = sum(len(saved["company_ids"]) for saved in state["parts"])
         part_sample = sample[start:start + state["batch_chunk_size"]]
         if not part_sample:
             return False
@@ -378,32 +382,94 @@ def queue_limit_failure(batch) -> bool:
 def resubmit_queue_limited_batches(client, state_path, state, part,
                                    batches) -> bool:
     """Replace only batches rejected by the organization queue-token cap."""
-    limited = {kind: batch for kind, batch in batches.items()
-               if queue_limit_failure(batch)}
-    other_bad = {kind: batch.status for kind, batch in batches.items()
-                 if batch.status != "completed" and kind not in limited}
+    limited = [(kind, index, batch)
+               for kind, kind_batches in batches.items()
+               for index, batch in enumerate(kind_batches)
+               if queue_limit_failure(batch)]
+    limited_keys = {(kind, index) for kind, index, _batch in limited}
+    other_bad = {f"{kind}[{index}]": batch.status
+                 for kind, kind_batches in batches.items()
+                 for index, batch in enumerate(kind_batches)
+                 if batch.status != "completed"
+                 and (kind, index) not in limited_keys}
     if not limited or other_bad:
         return False
     history = part.setdefault("queue_limit_retries", {})
-    for kind in limited:
+    for kind, index, _batch in limited:
         attempts = history.setdefault(kind, [])
         if len(attempts) >= 6:
             raise SystemExit(
                 f"{kind} hit the Batch queue-token limit six times; "
                 "nothing was written."
             )
-        old_id = part["batches"][kind]
+        batch_ids = as_list(part["batches"][kind])
+        input_metas = as_list(part["inputs"][kind])
+        old_id = batch_ids[index]
+        if len(batch_ids) == 1 and len(input_metas) == 1:
+            source = pathlib.Path(input_metas[0]["path"])
+            lines = source.read_text(encoding="utf-8").splitlines()
+            midpoint = (len(lines) + 1) // 2
+            split_metas = []
+            first_batch_id = None
+            for split_index, split_lines in enumerate(
+                    (lines[:midpoint], lines[midpoint:]), 1):
+                path = source.with_name(f"{source.stem}_{split_index}.jsonl")
+                path.write_text("\n".join(split_lines) + "\n", encoding="utf-8")
+                with path.open("rb") as fh:
+                    uploaded = client.files.create(file=fh, purpose="batch")
+                split_metas.append({"path": str(path), "sha256": sha256(path),
+                                    "file_id": uploaded.id})
+                if split_index == 1:
+                    replacement = client.batches.create(
+                        input_file_id=uploaded.id, endpoint="/v1/responses",
+                        completion_window="24h",
+                        metadata={"purpose": "startup-map-full-registry",
+                                  "task": kind},
+                    )
+                    first_batch_id = replacement.id
+            attempts.append(old_id)
+            part["inputs"][kind] = split_metas
+            part["batches"][kind] = [first_batch_id]
+            state["batch_chunk_size"] = min(state["batch_chunk_size"], 200)
+            print(f"Split queue-limited {kind} into two sequential batches; "
+                  f"submitted first half: {first_batch_id}")
+            continue
         replacement = client.batches.create(
-            input_file_id=part["inputs"][kind]["file_id"],
+            input_file_id=input_metas[index]["file_id"],
             endpoint="/v1/responses", completion_window="24h",
             metadata={"purpose": "startup-map-full-registry",
                       "task": kind},
         )
         attempts.append(old_id)
-        part["batches"][kind] = replacement.id
+        batch_ids[index] = replacement.id
+        part["batches"][kind] = batch_ids
         print(f"Resubmitted queue-limited {kind}: {replacement.id}")
     json_dump(state_path, state)
     return True
+
+
+def submit_pending_split_batches(client, state_path, state, part) -> bool:
+    """Submit the next split only after the prior split has left the queue."""
+    submitted = False
+    for kind in KINDS:
+        batch_ids = as_list(part["batches"][kind])
+        input_metas = as_list(part["inputs"][kind])
+        if len(batch_ids) >= len(input_metas):
+            continue
+        meta = input_metas[len(batch_ids)]
+        batch = client.batches.create(
+            input_file_id=meta["file_id"], endpoint="/v1/responses",
+            completion_window="24h",
+            metadata={"purpose": "startup-map-full-registry", "task": kind},
+        )
+        batch_ids.append(batch.id)
+        part["batches"][kind] = batch_ids
+        print(f"Submitted {kind} split {len(batch_ids)}/{len(input_metas)}: "
+              f"{batch.id}")
+        submitted = True
+    if submitted:
+        json_dump(state_path, state)
+    return submitted
 
 
 def collect(args) -> bool | None:
@@ -414,21 +480,32 @@ def collect(args) -> bool | None:
     if not state["parts"]:
         raise SystemExit("No Batch parts submitted; run submit first.")
     part = state["parts"][-1]
-    for kind, meta in part["inputs"].items():
-        if sha256(pathlib.Path(meta["path"])) != meta["sha256"]:
-            raise SystemExit(f"{kind} request file changed after submission.")
+    for kind, metas in part["inputs"].items():
+        for meta in as_list(metas):
+            if sha256(pathlib.Path(meta["path"])) != meta["sha256"]:
+                raise SystemExit(f"{kind} request file changed after submission.")
     client = OpenAI()
-    batches = {kind: client.batches.retrieve(part["batches"][kind])
+    batches = {kind: [client.batches.retrieve(batch_id)
+                      for batch_id in as_list(part["batches"][kind])]
                for kind in KINDS}
-    for kind, batch in batches.items():
-        print(status_line(kind, batch))
-    if any(b.status not in TERMINAL_STATES for b in batches.values()):
+    for kind, kind_batches in batches.items():
+        for index, batch in enumerate(kind_batches):
+            label = kind if len(kind_batches) == 1 else f"{kind} {index + 1}"
+            print(status_line(label, batch))
+    all_batches = [batch for kind_batches in batches.values()
+                   for batch in kind_batches]
+    if any(b.status not in TERMINAL_STATES for b in all_batches):
         return None
     if resubmit_queue_limited_batches(client, args.state, state, part, batches):
         return None
-    bad = {kind: b.status for kind, b in batches.items() if b.status != "completed"}
+    bad = {f"{kind}[{index}]": batch.status
+           for kind, kind_batches in batches.items()
+           for index, batch in enumerate(kind_batches)
+           if batch.status != "completed"}
     if bad:
         raise SystemExit(f"Registry batches did not complete: {bad}")
+    if submit_pending_split_batches(client, args.state, state, part):
+        return None
 
     run_dir = (pathlib.Path(state["run_dir"]) / "parts" /
                f"{part['index']:04d}")
@@ -438,9 +515,19 @@ def collect(args) -> bool | None:
     expected_api = {row[0] for row in part_sample
                     if pages[row[0]].fetch_bucket != "DEAD" and pages[row[0]].text}
     for kind in KINDS:
-        results[kind], failures[kind], usages[kind] = read_output(
-            client, batches[kind], kind, run_dir / f"{kind}_output.jsonl"
-        )
+        results[kind], failures[kind], usages[kind] = {}, {}, []
+        for index, batch in enumerate(batches[kind]):
+            suffix = "" if len(batches[kind]) == 1 else f"_{index + 1}"
+            found, invalid, usage = read_output(
+                client, batch, kind,
+                run_dir / f"{kind}_output{suffix}.jsonl"
+            )
+            overlap = set(results[kind]) & set(found)
+            if overlap:
+                raise SystemExit(f"{kind} split outputs contain duplicate IDs.")
+            results[kind].update(found)
+            failures[kind].update(invalid)
+            usages[kind].extend(usage)
         missing = expected_api - set(results[kind]) - set(failures[kind])
         failures[kind].update({cf: "missing from Batch output" for cf in missing})
     if any(failures.values()) and not part["retry_batches"]:

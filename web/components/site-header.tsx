@@ -1,5 +1,7 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { Provenance } from "@/lib/model";
+import wordmark from "@/public/venture-atlas.png";
 
 function formatDate(value: Date | string | null | undefined): string {
   if (!value) return "unknown date";
@@ -14,12 +16,15 @@ export function SiteHeader({ provenance }: { provenance: Provenance | null }) {
   return (
     <header className="on-navy sticky top-0 z-40 border-b border-panel-line/70 bg-navy text-on-navy">
       <div className="mx-auto flex h-14 max-w-[1560px] items-center gap-4 px-4 sm:px-6">
-        <Link
-          href="/"
-          className="display rounded-sm text-[18px] leading-none"
-          aria-label="VentureAtlas home"
-        >
-          Venture<span className="text-amber">Atlas</span>
+        <Link href="/" className="flex shrink-0 items-center rounded-sm">
+          {/* White-on-transparent, so it only ever sits on the navy chrome. */}
+          <Image
+            src={wordmark}
+            alt="VentureAtlas"
+            priority
+            sizes="160px"
+            className="h-[18px] w-auto"
+          />
         </Link>
 
         <span className="hidden h-5 w-px bg-panel-line sm:block" />

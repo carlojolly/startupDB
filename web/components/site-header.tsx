@@ -22,8 +22,7 @@ export function SiteHeader({ provenance }: { provenance: Provenance | null }) {
             src={wordmark}
             alt="VentureAtlas"
             priority
-            sizes="160px"
-            className="h-[18px] w-auto"
+            className="h-5 w-auto"
           />
         </Link>
 

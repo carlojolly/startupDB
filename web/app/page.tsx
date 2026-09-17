@@ -171,7 +171,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           <Image
             src={wordmarkDark}
             alt="VentureAtlas"
-            sizes="140px"
             className="mb-4 h-4 w-auto"
           />
           <p className="max-w-3xl">

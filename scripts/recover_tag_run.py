@@ -88,10 +88,26 @@ def restore_results(path: pathlib.Path) -> dict[str, dict[str, Any]]:
 
 def write_recovered_run(base_run_id: int, sample: list[tuple], pages,
                         results: dict[str, dict[str, Any]]) -> int:
-    marker = f"targeted_recovery_base_run={base_run_id}"
-    ids = {str(row[0]) for row in sample}
-    if any(set(results[kind]) != ids for kind in ("taxonomy", "vc")):
+    marker = f"targeted_recovery_v3_base_run={base_run_id}"
+    candidate_ids = {str(row[0]) for row in sample}
+    if any(set(results[kind]) != candidate_ids for kind in ("taxonomy", "vc")):
         raise SystemExit("Recovery results do not exactly cover the candidate set.")
+    improved_ids = {
+        cf for cf in candidate_ids
+        if pages[cf].fetch_bucket != "DEAD"
+        and not (
+            results["taxonomy"][cf]["parent_sector"] == ["unclear"]
+            and results["taxonomy"][cf]["sector"] == "unclear"
+            and results["taxonomy"][cf]["product_type"] == ["unclear"]
+            and results["taxonomy"][cf]["customer_model"] == ["unclear"]
+        )
+    }
+    improved_sample = [row for row in sample if str(row[0]) in improved_ids]
+    improved_results = {
+        kind: {cf: value for cf, value in results[kind].items()
+               if cf in improved_ids}
+        for kind in ("taxonomy", "vc")
+    }
 
     with connect() as conn, conn.cursor() as cur:
         cur.execute("SELECT companies_tagged FROM tag_runs WHERE id = %s",
@@ -110,7 +126,8 @@ def write_recovered_run(base_run_id: int, sample: list[tuple], pages,
         model = "gpt-5.6-terra taxonomy + gpt-5.6-luna VC (targeted recovery)"
         prompt = (f"{tag_companies.PROMPT_VERSION} + "
                   f"{score_vc_relevance.VC_PROMPT_VERSION}")
-        notes = (f"{marker}; {len(ids)} candidates re-fetched and reclassified; "
+        notes = (f"{marker}; {len(candidate_ids)} candidates evaluated; "
+                 f"{len(improved_ids)} demonstrated improvements applied; "
                  "base run copied unchanged for all other companies; exact-name "
                  "redirect verification; selected first-party page crawl; "
                  "all-unclear usable-page reassessment")
@@ -125,11 +142,13 @@ def write_recovered_run(base_run_id: int, sample: list[tuple], pages,
             SELECT codice_fiscale, %s, tag_type, tag_value, confidence,
                    evidence, source, fetch_pass, fetch_bucket, homepage_chars
             FROM company_tags WHERE run_id = %s
+            ORDER BY id
         """, (run_id, base_run_id))
         cur.execute("DELETE FROM company_tags WHERE run_id = %s "
-                    "AND codice_fiscale = ANY(%s)", (run_id, sorted(ids)))
+                    "AND codice_fiscale = ANY(%s)",
+                    (run_id, sorted(improved_ids)))
         replacement = tag_registry_batch.database_rows(
-            sample, pages, results, run_id
+            improved_sample, pages, improved_results, run_id
         )
         cur.executemany(
             "INSERT INTO company_tags (codice_fiscale,run_id,tag_type,tag_value,"
@@ -147,7 +166,8 @@ def write_recovered_run(base_run_id: int, sample: list[tuple], pages,
                     "WHERE id=%s", (expected, run_id))
         conn.commit()
     print(f"Wrote complete recovered tag_run {run_id}: {expected} companies, "
-          f"{len(ids)} replaced from run {base_run_id}.")
+          f"{len(improved_ids)}/{len(candidate_ids)} candidates improved from "
+          f"run {base_run_id}.")
     return run_id
 
 

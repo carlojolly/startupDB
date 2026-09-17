@@ -106,6 +106,34 @@ def test_validation_failure_is_reasked_once():
     assert all(call["temperature"] == 0 for call in responses.calls)
 
 
+def test_all_unclear_on_ok_page_is_reassessed_once():
+    unclear = _valid_tags(
+        parent_sector=["unclear"], sector="unclear",
+        product_type=["unclear"], customer_model=["unclear"],
+        one_line="Homepage describes connected safety products.",
+    )
+
+    class Responses:
+        def __init__(self):
+            self.calls = []
+
+        async def parse(self, **kwargs):
+            self.calls.append(kwargs)
+            parsed = unclear if len(self.calls) == 1 else _valid_tags()
+            return SimpleNamespace(output_parsed=parsed, usage=None)
+
+    responses = Responses()
+    result = asyncio.run(tag_companies.tag_one(
+        SimpleNamespace(responses=responses), asyncio.Semaphore(1),
+        "01234567890", "Example", "Software", "https://example.it",
+        "Concrete product homepage text " * 30, "OK/ok", "OK", "http",
+    ))
+
+    assert result.tags == _valid_tags()
+    assert len(responses.calls) == 2
+    assert "Reassess the page once" in responses.calls[1]["input"][1]["content"]
+
+
 def test_dead_homepage_is_unclear_without_calling_model(monkeypatch):
     def unexpected_client():
         raise AssertionError("an unreadable homepage must not reach the model")

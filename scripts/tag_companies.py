@@ -39,6 +39,8 @@ from db import connect, REPO_ROOT
 from test_websites import Result, check_one, USER_AGENT, THIN_TEXT_CHARS
 import render
 
+FOLLOWUP_CRAWL_MAX_CHARS = 2_500
+
 def make_client():
     """Build the async OpenAI client from the repository's .env file."""
     load_dotenv(REPO_ROOT / ".env")
@@ -396,37 +398,36 @@ async def fetch_all(sample: list[tuple], concurrency: int, timeout: float,
     ]
     if not use_browser:
         print(f"  pass 2 — skipped (--no-render); {len(needs_render)} thin pages left as-is")
-        return out
-    if not needs_render:
+    elif not needs_render:
         print("  pass 2 — nothing to render")
-        return out
-
-    print(f"  pass 2 — rendering {len(needs_render)} thin/empty pages in a browser")
-    rendered = await render.render_many([f.url for f in needs_render],
-                                        concurrency=render_concurrency)
-    rescued = 0
-    for f in needs_render:
-        got = rendered.get(f.url)
-        if got and got.note.startswith("offsite_redirect:"):
-            f.text = ""
-            f.fetch_pass = "none"
-            f.fetch_bucket = "DEAD"
-            f.note = got.note
-            continue
-        if got and len(got.text) > f.chars:
-            f.text = got.text
-            f.fetch_pass = "browser"
-            f.fetch_bucket = _bucket(len(got.text))
-            f.note = got.note
-            f.followup_urls = got.followup_urls or f.followup_urls
-            if f.fetch_bucket == "OK":
-                rescued += 1
-    print(f"    {rescued} pages crossed the usable threshold thanks to rendering")
+    else:
+        print(f"  pass 2 — rendering {len(needs_render)} thin/empty pages in a browser")
+        rendered = await render.render_many([f.url for f in needs_render],
+                                            concurrency=render_concurrency)
+        rescued = 0
+        for f in needs_render:
+            got = rendered.get(f.url)
+            if got and got.note.startswith("offsite_redirect:"):
+                f.text = ""
+                f.fetch_pass = "none"
+                f.fetch_bucket = "DEAD"
+                f.note = got.note
+                continue
+            if got and len(got.text) > f.chars:
+                f.text = got.text
+                f.fetch_pass = "browser"
+                f.fetch_bucket = _bucket(len(got.text))
+                f.note = got.note
+                f.followup_urls = got.followup_urls or f.followup_urls
+                if f.fetch_bucket == "OK":
+                    rescued += 1
+        print(f"    {rescued} pages crossed the usable threshold thanks to rendering")
 
     crawlable = [f for f in out.values()
-                 if 0 < f.chars < THIN_TEXT_CHARS and f.followup_urls]
+                 if 0 < f.chars < FOLLOWUP_CRAWL_MAX_CHARS and f.followup_urls]
     if crawlable:
-        print(f"  pass 3 — checking selected internal pages for {len(crawlable)} thin sites")
+        print(f"  pass 3 — checking selected internal pages for "
+              f"{len(crawlable)} compact sites")
         followups = []
         owners = {}
         for f in crawlable:
@@ -491,9 +492,26 @@ async def tag_one(client, sem, cf, name, attivita, url, page_text,
                     ],
                     text_format=CompanyTags,
                 )
-                return Tagged(cf, name, attivita, url, response.output_parsed,
-                              response.usage, page_chars=len(page_text),
-                              fetch_bucket=bucket, fetch_pass=fetch_pass)
+                parsed = response.output_parsed
+                all_unclear = (
+                    parsed.parent_sector == ["unclear"]
+                    and parsed.sector == "unclear"
+                    and parsed.product_type == ["unclear"]
+                    and parsed.customer_model == ["unclear"]
+                )
+                if attempt == 0 and bucket == "OK" and all_unclear:
+                    user_message += (
+                        "\n\nYou returned unclear for every classification field "
+                        "even though the extracted page passed the usable-text "
+                        "threshold. Reassess the page once. Classify any offering "
+                        "and customer evidence that is actually present; if the "
+                        "page is genuinely too vague, keep unclear. Do not infer "
+                        "from the company name or ATECO label."
+                    )
+                    continue
+                return Tagged(cf, name, attivita, url, parsed, response.usage,
+                              page_chars=len(page_text), fetch_bucket=bucket,
+                              fetch_pass=fetch_pass)
             except ValidationError as exc:
                 if attempt == 1:
                     return Tagged(

@@ -195,16 +195,25 @@ def page_identifies_company(codice_fiscale: str, source: str, *,
                             final_url: str = "") -> bool:
     """Verify that a cross-domain destination still belongs to the company.
 
-    The fiscal identifier remains the strongest signal. Two narrow domain
-    migration signals recover common registry staleness without accepting an
-    arbitrary destination: the old and new host keep the same distinctive
-    brand, or the new host begins with the company's distinctive name token.
+    The fiscal identifier remains the strongest signal. An exact normalized
+    registered name on the destination is also strong evidence. Two narrow
+    domain migration signals recover common registry staleness without
+    accepting an arbitrary destination: the old and new host keep the same
+    distinctive brand, or the new host begins with the company's distinctive
+    name token.
     """
     expected = "".join(character for character in codice_fiscale.lower()
                        if character.isalnum())
     document = "".join(character for character in source.lower()
                        if character.isalnum())
     if len(expected) >= 8 and expected in document:
+        return True
+
+    normalized_name = "".join(
+        character for character in company_name.lower()
+        if character.isalnum()
+    )
+    if len(normalized_name) >= 10 and normalized_name in document:
         return True
 
     old_brands = _host_brands(requested_url)

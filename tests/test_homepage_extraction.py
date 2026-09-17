@@ -183,6 +183,32 @@ def test_offsite_redirect_accepts_company_brand_in_new_domain():
     assert result.reason == "verified_offsite_redirect"
 
 
+def test_offsite_redirect_accepts_exact_registered_name_on_destination():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "www.ia-project.com":
+            return httpx.Response(301, headers={"location": "https://www.iatech.it"})
+        return httpx.Response(
+            200,
+            text=("<main>Augmented-reality social application. " * 30
+                  + "</main><footer>iA technologies Srl</footer>"),
+        )
+
+    async def exercise():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), follow_redirects=True,
+        ) as client:
+            return await check_one(
+                client, asyncio.Semaphore(1), "01237730864",
+                "IA TECHNOLOGIES S.R.L.", "https://www.ia-project.com",
+                keep_text=True,
+            )
+
+    result = asyncio.run(exercise())
+    assert result.bucket == "OK"
+    assert result.reason == "verified_offsite_redirect"
+    assert "Augmented-reality" in result.page_text
+
+
 def test_promising_internal_links_are_same_site_ranked_and_limited():
     links = promising_internal_links("""
       <a href="/contact">Contact</a>

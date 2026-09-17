@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -11,6 +12,7 @@ import {
 } from "@/components/signals";
 import { SiteHeader } from "@/components/site-header";
 import { getCompany, getProvenance } from "@/lib/companies";
+import wordmarkDark from "@/public/venture-atlas-dark.png";
 import {
   CUSTOMER_MODEL,
   FETCH_QUALITY_MEANING,
@@ -307,6 +309,12 @@ export default async function CompanyPage({
 
       <footer className="border-t border-line bg-surface">
         <div className="mx-auto max-w-[1040px] px-4 py-6 text-2xs leading-relaxed text-ink-muted sm:px-6">
+          <Image
+            src={wordmarkDark}
+            alt="VentureAtlas"
+            sizes="140px"
+            className="mb-4 h-4 w-auto"
+          />
           <p>
             Registry data from{" "}
             <a

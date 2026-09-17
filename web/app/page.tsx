@@ -1,4 +1,6 @@
+import Image from "next/image";
 import { Suspense } from "react";
+import wordmarkDark from "@/public/venture-atlas-dark.png";
 import { ActiveFilters } from "@/components/active-filters";
 import { CompanyRow } from "@/components/company-row";
 import { FilterPanel } from "@/components/filter-panel";
@@ -166,6 +168,12 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
 
       <footer className="border-t border-line bg-surface">
         <div className="mx-auto max-w-[1560px] px-4 py-8 text-2xs leading-relaxed text-ink-muted sm:px-6">
+          <Image
+            src={wordmarkDark}
+            alt="VentureAtlas"
+            sizes="140px"
+            className="mb-4 h-4 w-auto"
+          />
           <p className="max-w-3xl">
             Registry data from{" "}
             <a

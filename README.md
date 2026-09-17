@@ -419,6 +419,33 @@ cd web && npm run lint                 # eslint
 cd web && npx tsc --noEmit             # typecheck
 ```
 
+### Deploying it
+
+The app is a normal Next.js server app; it needs a Node runtime and a reachable
+database, not a static host.
+
+1. **Root directory: `web`.** The repo root is a Python project, so point the
+   deployment at the subdirectory or the build will not find `package.json`.
+2. **Set `DATABASE_URL`** as an environment variable on the host, for every
+   environment you build (production *and* preview — a preview build with the
+   variable missing still serves 500s at request time).
+3. **Use the Supabase pooler host, not the direct one.** This is the part that
+   bites. The direct `db.<ref>.supabase.co` hostname resolves over **IPv6 only**
+   — it has no A record — so it works from a laptop on an IPv6 network and times
+   out from most hosting providers. Take the **Session pooler** URI (port 5432)
+   or the **Transaction pooler** URI (port 6543) from the same Supabase page.
+   Both are IPv4-compatible, and the transaction pooler works here because
+   `lib/db.ts` already sets `prepare: false`.
+
+The connection is opened on the first query rather than at import, so a build
+with no `DATABASE_URL` succeeds and the failure surfaces at request time with a
+message that says what is missing.
+
+> **There is no authentication.** Anyone with the URL can read every company,
+> every label and every VC-relevance rationale in the current tag run. The
+> registry data is public; the classifications are not. Put the deployment
+> behind the host's access control, or keep it to a private preview URL.
+
 ### What it looks like
 
 Dark navy carries identity, navigation and search. The results surface below it

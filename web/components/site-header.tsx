@@ -18,10 +18,15 @@ export function SiteHeader({ provenance }: { provenance: Provenance | null }) {
       <div className="mx-auto flex h-14 max-w-[1560px] items-center gap-4 px-4 sm:px-6">
         <Link href="/" className="flex shrink-0 items-center rounded-sm">
           {/* White-on-transparent, so it only ever sits on the navy chrome. */}
+          {/* Explicit width/height, not just the utility classes: the <img>
+              attributes then size the logo on their own, so a CSS hiccup cannot
+              let a 1261px-wide asset loose in a 56px bar. */}
           <Image
             src={wordmark}
             alt="VentureAtlas"
             priority
+            width={158}
+            height={20}
             className="h-5 w-auto"
           />
         </Link>

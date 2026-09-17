@@ -312,6 +312,8 @@ export default async function CompanyPage({
           <Image
             src={wordmarkDark}
             alt="VentureAtlas"
+            width={127}
+            height={16}
             className="mb-4 h-4 w-auto"
           />
           <p>

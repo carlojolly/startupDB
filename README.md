@@ -10,7 +10,9 @@ keep. That matters because a company drops out of the registry once its
 five-year innovative-startup status expires — the weekly CSV is a snapshot of
 who qualifies *today*, not an archive.
 
-Current state: **data ingestion only.** No frontend yet.
+Current state: **ingestion, tagging and a dashboard.** The dashboard in
+`web/` is a read-only view over the database — see
+[The dashboard](#the-dashboard).
 
 ---
 
@@ -390,6 +392,76 @@ to submit if the gate, prompts, models, source CSV, or request files changed.
 Model work is submitted in sequential 400-company parts so the job also fits
 lower-tier Batch queue limits.
 
+## The dashboard — VentureAtlas
+
+`web/` is **VentureAtlas**, the analyst-facing view of the database: search by company name,
+filter by VC relevance, sector, product type, customer model, location and
+homepage evidence, sort the list, and open a company to read its tags and the
+rationale behind them.
+
+### Running it locally
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Then open <http://localhost:3000>.
+
+It reads `DATABASE_URL` from the repo-root `.env` — the same file the Python
+scripts use, so there is nothing extra to configure. Set `DATABASE_URL` in the
+environment (or in `web/.env.local`) to point it somewhere else.
+
+```bash
+cd web && npm run build && npm start   # production build
+cd web && npm run lint                 # eslint
+cd web && npx tsc --noEmit             # typecheck
+```
+
+### What it looks like
+
+Dark navy carries identity, navigation and search. The results surface below it
+stays light, because that is where dense small text has to stay readable. Blue
+is the interaction colour — active filters, buttons, focus rings. Amber is spent
+on exactly two things: the mark, and a `high` VC-relevance chip, so a shortlist
+is visible at a glance and nothing else competes with it. Companies have no
+logos in the registry and fetching favicons would hand every company's domain to
+a third party, so each row carries a tinted monogram derived from the registered
+name.
+
+### What it is built on
+
+Next.js (App Router) with Tailwind, querying Postgres directly through
+`postgres` on the server. The stack was chosen for what it avoids: filter state
+lives in the URL rather than in a client store, every query runs server-side so
+the connection string never reaches the browser, and there is no API layer to
+keep in sync with the schema. No auth, no caching layer, no ORM.
+
+### How it reads the data
+
+One query per page joins `companies_current` to `current_company_tags`, which
+is pinned to the newest finished tag run — **run 17** at the time of writing.
+The pivot uses `array_agg(tag_value ORDER BY id)`, because insertion order is
+what records the pipeline's primary-value-first ordering for the multi-value
+fields; the UI shows the first value with more weight and labels the rest as
+secondary.
+
+Two decisions worth knowing before reading the code:
+
+- **`unclear` is missing information, not a category.** It never renders as a
+  tag value, it sorts last in every ranking, and it appears in the filters only
+  as an explicitly greyed "Not classified" option.
+- **There is no confidence score.** The pipeline does not produce one, so the
+  dashboard does not invent one. What it shows instead is `fetch_bucket` —
+  `OK` / `THIN` / `DEAD` — beside every company, and within one VC-relevance
+  level it ranks stronger homepage evidence first. A `high` label built on a
+  `DEAD` homepage is visibly not the same as one built on a page that was read
+  in full.
+
+VC relevance is labelled throughout as an AI-assisted sourcing signal, not an
+investment recommendation.
+
 ## Known data quirks
 
 The registry export is messier than it looks. The full findings are in
@@ -442,7 +514,8 @@ can fix it with SQL rather than re-importing.
 │   ├── 002_reference_data.sql the registry's legend as lookup tables
 │   ├── 003_views.sql         companies_current and friends
 │   ├── 004_search_indexes.sql trigram indexes for name/town search
-│   └── 005_tag_fetch_provenance.sql  which fetch pass produced each tag
+│   ├── 005_tag_fetch_provenance.sql  which fetch pass produced each tag
+│   └── 006_import_data_vintage.sql   how current each import's data was
 │
 ├── scripts/
 │   ├── db.py             # the one place that knows how to connect
@@ -456,6 +529,11 @@ can fix it with SQL rather than re-importing.
 │
 ├── tests/
 │   └── test_clean.py     # runs without a database
+│
+├── web/                  # the dashboard (Next.js). See "The dashboard".
+│   ├── app/                  routes: the list, and /company/[cf]
+│   ├── components/           list rows, filters, signal chips
+│   └── lib/                  db connection, SQL, the tag vocabularies
 │
 ├── data/raw/             # git-ignored. Put the CSV exports here.
 └── docs/
@@ -474,9 +552,22 @@ database, that is the file to open first.
 pytest
 ```
 
-35 tests, none of which need a database. Most of the website cases are real
+91 tests, none of which need a database. Most of the website cases are real
 values copied out of the registry export. There is also a whole-file smoke
 test that runs only if you have a CSV in `data/raw/`, and is skipped otherwise.
+
+`tests/test_dashboard.py` adds 24 end-to-end checks that drive the dashboard
+over HTTP — ranking, filtering, search, and how `unclear` is presented. They
+are skipped unless a dev server is already listening on port 3000, so `pytest`
+stays green with nothing running:
+
+```bash
+cd web && npm run dev     # one terminal
+pytest                    # another
+```
+
+The dashboard also has its own checks — `npm run lint`, `npx tsc --noEmit` and
+`npm run build`, all run from `web/`.
 
 ---
 

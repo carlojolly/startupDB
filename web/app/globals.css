@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   VentureAtlas.
+
+   Dark navy carries identity, navigation and search. The data surface below it
+   stays light, because that is where small text and dense rows live. Blue is
+   the action colour; amber is spent only on the strongest signal.
+   --------------------------------------------------------------------------- */
+@theme {
+  /* dark chrome */
+  --color-navy: #061622;
+  --color-navy-deep: #03101a;
+  --color-panel: #0a2130;
+  --color-panel-raised: #10303f;
+  --color-panel-line: #1d3d50;
+  --color-on-navy: #ffffff;
+  --color-on-navy-muted: #8fa9bc; /* 6.7:1 on --color-panel */
+  --color-on-navy-faint: #6d8ca3; /* 5.2:1 on --color-navy */
+
+  /* light data surface */
+  --color-page: #ffffff;
+  --color-surface: #f7f9fb;
+  --color-surface-sunk: #edf1f5;
+  --color-line: #e3e9ef;
+  --color-line-strong: #c8d3de;
+
+  --color-ink: #0c1b26;
+  --color-ink-muted: #5a6b7b; /* 5.4:1 on white */
+  --color-ink-faint: #8a9aaa; /* decorative: rules, icons, dividers */
+
+  /* action */
+  --color-brand: #1863e0; /* 5.4:1 against white text */
+  --color-brand-bright: #2d7cf5; /* on dark navy only */
+  --color-brand-wash: #e9f1fe;
+  --color-brand-line: #b9d2fa;
+
+  /* the strongest signal, and nothing else */
+  --color-amber: #ffc700;
+  --color-amber-deep: #8a6900; /* 5.1:1 on white */
+  --color-amber-wash: #fff6d6;
+  --color-amber-line: #f0c43c;
+
+  --font-display: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  background: var(--color-navy);
+}
+
+body {
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* Display type is set tight and dark-ready: the headline sizes are where the
+   geometric face earns its keep. */
+.display {
+  font-family: var(--font-display);
+  letter-spacing: -0.028em;
+  font-weight: 700;
+}
+
+.eyebrow {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* One focus treatment, inverted on dark so it is visible on both surfaces. */
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.on-navy :focus-visible {
+  outline-color: var(--color-amber);
+}
+
+/* The faint grid the reference dashboards use to stop large dark areas from
+   reading as flat. Cheap: two repeating gradients, no image. */
+.grid-field {
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.05) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

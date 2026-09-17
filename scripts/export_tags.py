@@ -89,6 +89,14 @@ def _require_contract_row_count(rows, run_id: int) -> None:
         )
 
 
+def _require_full_run_count(rows, run_id: int, companies_tagged: int) -> None:
+    if not companies_tagged or len(rows) != companies_tagged:
+        raise SystemExit(
+            f"tag_run {run_id} contains {len(rows)} exported companies but "
+            f"tag_runs records {companies_tagged}; no file was written."
+        )
+
+
 def _join_multi_value(values, field: str, run_id: int, cf: str) -> str:
     """Join one or two ordered tag values using the contract delimiter."""
     if not 1 <= len(values) <= 2:
@@ -157,6 +165,9 @@ def main() -> None:
     parser.add_argument("--out", type=pathlib.Path, default=None)
     parser.add_argument("--include-vc", action="store_true",
                         help="Append VC relevance and rationale for dashboard use")
+    parser.add_argument("--full-run", action="store_true",
+                        help="Export a complete non-benchmark run, verified against "
+                             "tag_runs.companies_tagged")
     args = parser.parse_args()
 
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", args.tool):
@@ -213,7 +224,10 @@ def main() -> None:
         """, (run_id,))
         db_rows = cur.fetchall()
 
-    _require_contract_row_count(db_rows, run_id)
+    if args.full_run:
+        _require_full_run_count(db_rows, run_id, meta[3])
+    else:
+        _require_contract_row_count(db_rows, run_id)
 
     rows = [_export_row(db_row, run_id, include_vc=args.include_vc)
             for db_row in db_rows]

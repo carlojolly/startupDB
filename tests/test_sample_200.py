@@ -59,3 +59,11 @@ def test_loader_limit_keeps_first_rows_in_file_order():
 def test_export_rejects_non_200_company_runs(row_count):
     with pytest.raises(SystemExit, match="requires exactly 200"):
         export_tags._require_contract_row_count([None] * row_count, run_id=12)
+
+
+def test_full_run_export_requires_database_count_to_match():
+    export_tags._require_full_run_count([None] * 3, run_id=14,
+                                        companies_tagged=3)
+    with pytest.raises(SystemExit, match="3 exported companies"):
+        export_tags._require_full_run_count([None] * 3, run_id=14,
+                                            companies_tagged=4)

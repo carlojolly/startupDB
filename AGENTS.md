@@ -65,20 +65,16 @@ Run these only when the user asks for that specific run. Prefer the
    it (rollback), never print-and-continue.
 3. **`codice_fiscale` is an 11-character string**, 6,961 of them with a leading
    zero. Never cast to int, never let pandas or Excel touch the CSV.
-4. **Migrations are new files.** `sql/001`–`006` and `008` are applied to the
-   live database. **`sql/007_published_run.sql` is NOT applied** — checked
-   against the database on 2026-09-18: `published_run` does not exist and
-   `current_company_tags` still carries the 003 definition, which picks the
-   newest finished run on its own. So `publish_run.py` cannot work and a new
-   finished run appears on the dashboard by itself. Nothing may reference
-   `published_run` until someone applies 007. Do not edit an applied file; add
-   `sql/009_<name>.sql` using `IF NOT EXISTS` / `ON CONFLICT` /
-   `CREATE OR REPLACE VIEW` so `init_db.py` stays re-runnable.
-5. **The dashboard is meant to show the published run only** (`published_run`
-   table, `sql/007`), so that finishing a tag run changes nothing on screen
-   until `publish_run.py --run-id N` is run by a human. **This is not true of
-   the live database yet**: 007 is unapplied, so the newest finished run does
-   appear on its own. Treat the rule as the intent and see rule 4.
+4. **Migrations are new files.** `sql/001`–`008` have been applied to the live
+   database; 007 and 008 were applied on 2026-09-18 and verified against it.
+   Do not edit them; add `sql/009_<name>.sql` using `IF NOT EXISTS` /
+   `ON CONFLICT` / `CREATE OR REPLACE VIEW` so `init_db.py` stays re-runnable.
+   The repo said 007 was applied for months while it was not, so check
+   `to_regclass` before trusting this list for anything destructive.
+5. **The dashboard shows the published run only** (`published_run` table,
+   `sql/007`). Finishing a tag run changes nothing on screen until
+   `publish_run.py --run-id N` is run by a human. True of the live database
+   since 2026-09-18; run 17 is published.
 6. **No LLM calls at runtime.** Enrichment is an offline batch step whose cost
    is paid once per run. Do not add a model call to a request path in `web/`
    or to anything scheduled. See `docs/adr/0005`.
@@ -154,8 +150,8 @@ scripts/export_tags.py         CSV export per the contract's 13 columns
 scripts/read_feedback.py       what readers wrote in the dashboard's feedback box
 scripts/test_websites.py, render.py   fetch pass 1 (httpx) and pass 2 (Chromium)
 sql/001 schema · 002 reference data · 003 views · 004 trigram indexes ·
-    005 fetch provenance · 006 import vintage ·
-    007 published_run (NOT applied to the live database) · 008 feedback
+    005 fetch provenance · 006 import vintage · 007 published_run ·
+    008 feedback
 web/lib/companies.ts        every SQL read the dashboard runs
 web/lib/feedback.ts         the one SQL write: a reader's note
 web/app/actions.ts          the server action behind the feedback box

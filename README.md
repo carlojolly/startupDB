@@ -558,6 +558,7 @@ can fix it with SQL rather than re-importing.
 ```
 .
 ├── README.md
+├── AGENTS.md             # instructions for coding agents (CLAUDE.md includes it)
 ├── requirements.txt
 ├── .env.example          # template; copy to .env and fill in
 ├── .gitignore            # excludes .env and all data files
@@ -584,7 +585,9 @@ can fix it with SQL rather than re-importing.
 │
 ├── tests/
 │   ├── test_clean.py       # cleaning functions, no database
-│   └── test_import_csv.py  # parsing, counting and the import guard rails
+│   ├── test_import_csv.py  # parsing, counting and the import guard rails
+│   ├── test_taxonomy_consistency.py  # the three vocabulary declarations agree
+│   └── ...                 # tagging contract, batch pipeline, dashboard (needs :3000)
 │
 ├── web/                  # the dashboard (Next.js). See "The dashboard".
 │   ├── app/                  routes: the list, and /company/[cf]
@@ -592,8 +595,13 @@ can fix it with SQL rather than re-importing.
 │   └── lib/                  db connection, SQL, the tag vocabularies
 │
 ├── data/raw/             # git-ignored. Put the CSV exports here.
+├── .github/workflows/ci.yml  # pytest, eslint, tsc, build — all offline
 └── docs/
-    └── data-notes.md     # full data-quality findings
+    ├── data-notes.md     # full data-quality findings
+    ├── tagging-contract-v5.md  # the frozen experiment contract
+    ├── adr/              # why the big decisions were made
+    ├── BACKLOG.md        # what to do next, written as executable specs
+    └── audit/            # the 2026-09-18 senior review and its fixes
 ```
 
 `clean.py` deliberately contains **no database code** — every function in it
@@ -607,6 +615,10 @@ database, that is the file to open first.
 ```bash
 pytest
 ```
+
+The same suite, plus the dashboard's lint, typecheck and build, runs on every
+push and pull request through `.github/workflows/ci.yml`. Nothing in CI needs
+the database.
 
 None of the unit tests need a database. Most of the website cases are real
 values copied out of the registry export. Two tests read the registry CSV in

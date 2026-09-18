@@ -49,6 +49,11 @@ DATE_FIELDS = (
 # truncated or partial, not that hundreds of companies left the registry.
 MAX_DELIST_SHARE = 0.05
 
+# ATECO 2025 replaced ATECO 2007 and existing firms were reclassified by the
+# chambers of commerce. A week in which this share of companies change code is
+# the coding scheme changing, not the companies.
+MAX_ATECO_CHANGE_SHARE = 0.10
+
 
 class _DryRunRollback(Exception):
     """Raised to abort the transaction at the end of a --dry-run.
@@ -173,6 +178,28 @@ def check_delist_share(would_delist: int, active_total: int, allow: bool) -> Non
         )
 
 
+def check_ateco_change_share(changed: int, compared: int, allow: bool) -> None:
+    """Refuse a file in which an implausible share of companies changed ATECO code.
+
+    The content hash cannot tell a reclassification of the coding scheme from
+    a company changing its activity. Stopping here lets a human record the
+    reclassification (the override is written to imports.notes) instead of it
+    being read later as thousands of businesses changing in one week.
+    """
+    if not changed or allow or not compared:
+        return
+    share = changed / compared
+    if share > MAX_ATECO_CHANGE_SHARE:
+        raise SystemExit(
+            f"\nREFUSING TO IMPORT: {changed:,} of {compared:,} previously seen "
+            f"companies ({share:.1%}) carry a different ATECO code than their last "
+            f"snapshot, above the {MAX_ATECO_CHANGE_SHARE:.0%} limit.\nThat looks like "
+            f"a reclassification of the coding scheme (e.g. ATECO 2007 -> 2025) rather "
+            f"than the companies changing. If so, re-run with "
+            f"--allow-ateco-reclassification; the import will record it."
+        )
+
+
 def data_vintage(rows: list[dict]) -> datetime.date | None:
     """The newest registration date in the file — the data's own vintage.
 
@@ -218,6 +245,12 @@ def main() -> None:
         help=f"Permit delisting more than {MAX_DELIST_SHARE:.0%} of active "
              "companies in one import. By default that refuses the import, "
              "because it almost always means a truncated file.",
+    )
+    parser.add_argument(
+        "--allow-ateco-reclassification", action="store_true",
+        help=f"Permit more than {MAX_ATECO_CHANGE_SHARE:.0%} of companies to change "
+             "ATECO code in one import, and record on the import that a "
+             "reclassification was accepted. By default that refuses the import.",
     )
     parser.add_argument(
         "--force", action="store_true",
@@ -400,12 +433,14 @@ def main() -> None:
 
                 cur.execute(
                     """
-                    SELECT DISTINCT ON (codice_fiscale) codice_fiscale, content_hash
+                    SELECT DISTINCT ON (codice_fiscale) codice_fiscale, content_hash, ateco_raw
                     FROM company_snapshots
                     ORDER BY codice_fiscale, observed_on DESC, id DESC
                     """
                 )
-                latest_hashes = dict(cur.fetchall())
+                latest = {cf: (content_hash, ateco)
+                          for cf, content_hash, ateco in cur.fetchall()}
+                latest_hashes = {cf: content_hash for cf, (content_hash, _ateco) in latest.items()}
 
                 incoming = {r["codice_fiscale"] for r in rows}
                 new_companies = incoming - known_companies
@@ -441,6 +476,21 @@ def main() -> None:
                     if latest_hashes.get(r["codice_fiscale"]) != r["content_hash"]
                 ]
                 unchanged = len(rows) - len(to_insert)
+
+                # A registry-wide reclassification would look like thousands of
+                # companies changing business in one week. Count it and stop
+                # above the limit; the operator's override is recorded below.
+                compared = sum(1 for r in rows if r["codice_fiscale"] in latest)
+                ateco_changed = sum(
+                    1 for r in to_insert
+                    if r["codice_fiscale"] in latest
+                    and latest[r["codice_fiscale"]][1] != r["ateco_raw"]
+                )
+                if ateco_changed:
+                    print(f"  {ateco_changed} companies carry a different ATECO code "
+                          f"than their last snapshot")
+                check_ateco_change_share(ateco_changed, compared,
+                                         args.allow_ateco_reclassification)
 
                 if to_insert:
                     placeholders = ", ".join(["%s"] * len(SNAPSHOT_COLUMNS))
@@ -501,8 +551,11 @@ def main() -> None:
                     f"bad_cf={stats['skipped_bad_cf']}, "
                     f"duplicate_in_file={stats['skipped_duplicate_in_file']}; "
                     f"unparsed_dates={stats['unparsed_dates']}; "
-                    f"unchanged={unchanged}"
+                    f"unchanged={unchanged}; ateco_changed={ateco_changed}; "
+                    f"ateco_header={columns['ateco_raw']!r}"
                 )
+                if args.allow_ateco_reclassification:
+                    notes += "; ATECO reclassification accepted by the operator"
                 if existing and args.force:
                     notes += "; re-imported with --force (companies_new counts only " \
                              "companies unseen before this re-run)"

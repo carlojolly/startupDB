@@ -103,3 +103,11 @@ def test_delist_guard_allows_normal_churn_and_refuses_a_truncated_file():
     import_csv.check_delist_share(8_500, 11_500, allow=True)    # override honoured
     with pytest.raises(SystemExit, match="8,500 of 11,500 active companies"):
         import_csv.check_delist_share(8_500, 11_500, allow=False)
+
+
+def test_ateco_guard_allows_ordinary_churn_and_refuses_a_reclassification():
+    import_csv.check_ateco_change_share(0, 0, allow=False)          # first import
+    import_csv.check_ateco_change_share(120, 11_500, allow=False)   # ~1%: a normal week
+    import_csv.check_ateco_change_share(9_000, 11_500, allow=True)  # override honoured
+    with pytest.raises(SystemExit, match="9,000 of 11,500 previously seen"):
+        import_csv.check_ateco_change_share(9_000, 11_500, allow=False)

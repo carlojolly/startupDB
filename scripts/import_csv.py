@@ -221,8 +221,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--force", action="store_true",
-        help="Re-import a file already loaded. Deletes the previous import "
-             "record and its snapshots first. Repair tool — not routine.",
+        help="Re-import a file already loaded by replacing that import in "
+             "place: its snapshots are deleted and rewritten under the same "
+             "import id. Only the most recent import can be replaced. Repair "
+             "tool — not routine.",
     )
     args = parser.parse_args()
 
@@ -279,10 +281,27 @@ def main() -> None:
                         "Nothing to do. Use --force to load it again."
                     )
                     return
+                import_id = None
                 if existing and args.force:
-                    print(f"\n--force: removing previous import {existing[0]} and its snapshots")
-                    cur.execute("DELETE FROM company_snapshots WHERE import_id = %s", (existing[0],))
-                    cur.execute("DELETE FROM imports WHERE id = %s", (existing[0],))
+                    # The imports row cannot be deleted: companies.first_seen_import_id
+                    # and last_seen_import_id reference it, so the delete would fail
+                    # the foreign key. Replace the load in place instead — drop this
+                    # import's snapshots and reuse its id — and only for the newest
+                    # import, so the change comparison below runs against the
+                    # snapshots that preceded it rather than ones taken later.
+                    cur.execute("SELECT max(id) FROM imports")
+                    if cur.fetchone()[0] != existing[0]:
+                        raise SystemExit(
+                            f"\n--force can only replace the most recent import, and "
+                            f"import {existing[0]} is not the newest.\nRe-importing an "
+                            "older file would compare its rows against snapshots taken "
+                            "after it."
+                        )
+                    print(f"\n--force: replacing import {existing[0]} in place — its "
+                          "snapshots are deleted and rewritten")
+                    cur.execute("DELETE FROM company_snapshots WHERE import_id = %s",
+                                (existing[0],))
+                    import_id = existing[0]
 
                 # --- 2b. Is this file older than what we already hold? -----------
                 # Delisting marks every company absent from THIS file as inactive.
@@ -304,24 +323,40 @@ def main() -> None:
                     print(f"  note: same data vintage ({observed_on}) as data already "
                           f"held — the registry may not have refreshed since last time.")
 
-                # --- 2. Open the import record -----------------------------------
-                cur.execute(
-                    """
-                    INSERT INTO imports (source_filename, file_sha256, file_size_bytes,
-                                         file_modified_at, rows_in_file, rows_valid,
-                                         rows_skipped, data_vintage)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    RETURNING id
-                    """,
-                    (
-                        path.name, file_hash, path.stat().st_size,
-                        datetime.datetime.fromtimestamp(path.stat().st_mtime,
-                                                        tz=datetime.timezone.utc),
-                        stats["rows_in_file"], stats["rows_valid"],
-                        stats["rows_in_file"] - stats["rows_valid"], vintage,
-                    ),
+                # --- 2. Open (or, with --force, reset) the import record ---------
+                import_values = (
+                    path.name, file_hash, path.stat().st_size,
+                    datetime.datetime.fromtimestamp(path.stat().st_mtime,
+                                                    tz=datetime.timezone.utc),
+                    stats["rows_in_file"], stats["rows_valid"],
+                    stats["rows_in_file"] - stats["rows_valid"], vintage,
                 )
-                import_id = cur.fetchone()[0]
+                if import_id is None:
+                    cur.execute(
+                        """
+                        INSERT INTO imports (source_filename, file_sha256, file_size_bytes,
+                                             file_modified_at, rows_in_file, rows_valid,
+                                             rows_skipped, data_vintage)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                        """,
+                        import_values,
+                    )
+                    import_id = cur.fetchone()[0]
+                else:
+                    cur.execute(
+                        """
+                        UPDATE imports
+                           SET source_filename = %s, file_sha256 = %s, file_size_bytes = %s,
+                               file_modified_at = %s, rows_in_file = %s, rows_valid = %s,
+                               rows_skipped = %s, data_vintage = %s,
+                               imported_at = now(), completed_at = NULL,
+                               snapshots_inserted = NULL, companies_new = NULL,
+                               companies_delisted = NULL, notes = NULL
+                         WHERE id = %s
+                        """,
+                        (*import_values, import_id),
+                    )
                 print(f"\nImport id : {import_id}")
 
             # --- 3. Make sure lookups cover everything in this file ----------
@@ -468,6 +503,9 @@ def main() -> None:
                     f"unparsed_dates={stats['unparsed_dates']}; "
                     f"unchanged={unchanged}"
                 )
+                if existing and args.force:
+                    notes += "; re-imported with --force (companies_new counts only " \
+                             "companies unseen before this re-run)"
                 cur.execute(
                     """
                     UPDATE imports

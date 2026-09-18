@@ -179,7 +179,7 @@ one run, listed below, so an unusual week is a decision rather than an accident.
 | `--allow-unparsed-dates` | By default the import refuses a file in which any date value fails to parse, because a format change would otherwise silently NULL every date and write a false snapshot for every company. This flag loads it anyway. |
 | `--no-delist` | Skips marking absent companies inactive. Use when loading an **older** file after a newer one, which would otherwise delist everyone wrongly. |
 | `--allow-mass-delist` | The import refuses to delist more than 5% of active companies in one go — a normal week delists a few dozen, and a bigger number means the file is truncated. This flag permits it when the delisting is real. |
-| `--force` | Re-imports a file already loaded, deleting the previous import and its snapshots first. Repair tool — not part of the normal workflow. |
+| `--force` | Re-imports a file already loaded by replacing that import in place: its snapshots are deleted and rewritten under the same import id and its counts are reset. Only the most recent import can be replaced. Repair tool — not part of the normal workflow. |
 
 ---
 

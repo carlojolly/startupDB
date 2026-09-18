@@ -71,7 +71,7 @@ function Panel({
         >
           <path d="m3 7.5 3 3 5-7" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        Thanks — that is saved.
+        Thanks, that is saved.
       </p>
     );
   }

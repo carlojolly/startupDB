@@ -12,6 +12,11 @@ import sys
 import psycopg
 from dotenv import load_dotenv
 
+if sys.version_info < (3, 11):
+    # datetime.UTC and the asyncio TimeoutError alias both arrived in 3.11;
+    # on 3.10 the render pass would crash instead of recording a timeout.
+    sys.exit(f"ERROR: Python 3.11 or newer is required (found {sys.version.split()[0]}).")
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 SQL_DIR = REPO_ROOT / "sql"
 DATA_DIR = REPO_ROOT / "data" / "raw"

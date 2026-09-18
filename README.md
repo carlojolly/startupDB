@@ -18,7 +18,7 @@ Current state: **ingestion, tagging and a dashboard.** The dashboard in
 
 ## Quick start
 
-You need **Python 3.10+** and a Postgres database. Nothing runs locally except
+You need **Python 3.11+** and a Postgres database. Nothing runs locally except
 Python — the database is hosted.
 
 ### 1. Get a database

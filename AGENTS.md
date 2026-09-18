@@ -50,6 +50,7 @@ server on :3000, and two tests need the git-ignored raw CSV.
 | `python scripts/tag_registry_batch.py run --write` | Full-registry run (~9,620 companies, ~$13 on OpenAI Batch) |
 | `python scripts/recover_tag_run.py` | A new run derived from a base run |
 | `python scripts/publish_run.py --run-id N` | Moves what the dashboard shows |
+| `python scripts/read_feedback.py --handle N` | Marks one reader's note handled (reading is safe) |
 
 Run these only when the user asks for that specific run. Prefer the
 `--dry-run` / `--no-write` form first and show its output.
@@ -65,8 +66,11 @@ Run these only when the user asks for that specific run. Prefer the
 3. **`codice_fiscale` is an 11-character string**, 6,961 of them with a leading
    zero. Never cast to int, never let pandas or Excel touch the CSV.
 4. **Migrations are new files.** `sql/001`–`007` have been applied to the live
-   database. Do not edit them; add `sql/008_<name>.sql` using `IF NOT EXISTS`
-   / `ON CONFLICT` / `CREATE OR REPLACE VIEW` so `init_db.py` stays re-runnable.
+   database. **`sql/008_feedback.sql` is written but NOT yet applied** — the
+   dashboard's feedback box fails until someone runs `init_db.py` against a
+   reachable database. Do not edit an applied file; add `sql/009_<name>.sql`
+   using `IF NOT EXISTS` / `ON CONFLICT` / `CREATE OR REPLACE VIEW` so
+   `init_db.py` stays re-runnable.
 5. **The dashboard shows the published run only** (`published_run` table,
    `sql/007`). Finishing a tag run changes nothing on screen until
    `publish_run.py --run-id N` is run by a human.
@@ -85,10 +89,12 @@ Run these only when the user asks for that specific run. Prefer the
     values. Every guard in this repo refuses and rolls back; keep it that way.
 11. **Secrets.** `.env` is never committed. `web/` has no `NEXT_PUBLIC_*`
     variable and must not get one; `process.env` is read only in `web/lib/db.ts`.
-12. **Server-only data access.** Every query stays in `web/lib/companies.ts`
-    (guarded by `import "server-only"`). Client components import only
-    `lib/taxonomy`, `lib/model`, `lib/search-params`. No API routes exist and
-    none are needed.
+12. **Server-only data access.** Every read stays in `web/lib/companies.ts`
+    and the one write in `web/lib/feedback.ts`, both guarded by
+    `import "server-only"`. Client components import only `lib/taxonomy`,
+    `lib/model`, `lib/search-params`. The feedback box reaches the database
+    through the server action in `web/app/actions.ts`. No API routes exist and
+    none are needed — add a server action, not a route.
 
 ## Facts about the data you will otherwise get wrong
 
@@ -135,10 +141,15 @@ scripts/tag_registry_batch.py  resumable full-registry OpenAI Batch job
 scripts/recover_tag_run.py     targeted re-fetch/re-tag into a new run
 scripts/publish_run.py         the pointer the dashboard reads
 scripts/export_tags.py         CSV export per the contract's 13 columns
+scripts/read_feedback.py       what readers wrote in the dashboard's feedback box
 scripts/test_websites.py, render.py   fetch pass 1 (httpx) and pass 2 (Chromium)
 sql/001 schema · 002 reference data · 003 views · 004 trigram indexes ·
-    005 fetch provenance · 006 import vintage · 007 published_run
-web/lib/companies.ts        every SQL query the dashboard runs
+    005 fetch provenance · 006 import vintage · 007 published_run ·
+    008 feedback (NOT yet applied to the live database)
+web/lib/companies.ts        every SQL read the dashboard runs
+web/lib/feedback.ts         the one SQL write: a reader's note
+web/app/actions.ts          the server action behind the feedback box
+web/components/feedback.tsx the header's feedback popover
 web/lib/taxonomy.ts         vocabularies, labels, and SQL sort order
 web/lib/search-params.ts    URL ⇄ filter state (all UI state is in the URL)
 docs/tagging-contract-v5.md the frozen experiment contract

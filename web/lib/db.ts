@@ -36,6 +36,10 @@ function open(): postgres.Sql {
       ssl: { rejectUnauthorized: false },
       max: 5,
       idle_timeout: 20,
+      // Without this, an unreachable host retries forever: a page hangs with no
+      // error and the feedback box sits on "Sending…" indefinitely. Ten seconds
+      // is long enough for a cold pooler connection and short enough to report.
+      connect_timeout: 10,
       // Also what lets the transaction pooler (port 6543) work, since it does
       // not support prepared statements.
       prepare: false,

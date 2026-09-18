@@ -70,3 +70,11 @@ export type Provenance = {
   finished_at: Date;
   companies: number;
 };
+
+/** Longest note the feedback box accepts; the table enforces the same bound. */
+export const MAX_FEEDBACK = 4000;
+
+export type FeedbackState =
+  | { status: "idle" }
+  | { status: "sent" }
+  | { status: "error"; error: string };

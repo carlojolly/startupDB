@@ -90,6 +90,12 @@ body {
   outline-color: var(--color-amber);
 }
 
+/* A light panel hanging off the dark chrome takes the dark ring back: amber is
+   spent on the mark and the `high` chip, and nowhere else. */
+.on-navy .on-light :focus-visible {
+  outline-color: var(--color-ink);
+}
+
 /* The faint grid the reference dashboards use to stop large dark areas from
    reading as flat. Cheap: two repeating gradients, no image. */
 .grid-field {

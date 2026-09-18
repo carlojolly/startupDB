@@ -500,6 +500,26 @@ what records the pipeline's primary-value-first ordering for the multi-value
 fields; the UI shows the first value with more weight and labels the rest as
 secondary.
 
+### How a reader answers back
+
+The header carries a **Feedback** box: a textarea that writes one row to
+`feedback` and closes. It exists because the dashboard is shared with dealflow
+analysts who have no account and no reason to compose an email, and because the
+thing most worth hearing — "this label is wrong" — is worth one sentence, not a
+message.
+
+The note is stored with the path the writer was on, the company if they were
+looking at one, and the tag run that was published at that moment, because the
+labels being judged belong to a run rather than to the company. Read them with:
+
+```bash
+python scripts/read_feedback.py --new
+```
+
+The write goes through a server action (`web/app/actions.ts`), not an API
+route, so the connection string still never leaves the server. A send that
+fails says so and keeps what was typed; it never reports a note as saved.
+
 Two decisions worth knowing before reading the code:
 
 - **`unclear` is missing information, not a category.** It never renders as a
@@ -570,7 +590,8 @@ can fix it with SQL rather than re-importing.
 │   ├── 004_search_indexes.sql trigram indexes for name/town search
 │   ├── 005_tag_fetch_provenance.sql  which fetch pass produced each tag
 │   ├── 006_import_data_vintage.sql   how current each import's data was
-│   └── 007_published_run.sql         which tag run the dashboard shows
+│   ├── 007_published_run.sql         which tag run the dashboard shows
+│   └── 008_feedback.sql              notes left by readers of the dashboard
 │
 ├── scripts/
 │   ├── db.py             # the one place that knows how to connect
@@ -581,7 +602,8 @@ can fix it with SQL rather than re-importing.
 │   ├── render.py         # pass 2: headless-browser rendering
 │   ├── tag_companies.py  # LLM tagging pipeline
 │   ├── publish_run.py    # choose which tag run the dashboard shows
-│   └── export_tags.py    # export a tag run to CSV
+│   ├── export_tags.py    # export a tag run to CSV
+│   └── read_feedback.py  # read what dashboard readers wrote
 │
 ├── tests/
 │   ├── test_clean.py       # cleaning functions, no database

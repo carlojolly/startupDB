@@ -583,7 +583,8 @@ can fix it with SQL rather than re-importing.
 │   └── export_tags.py    # export a tag run to CSV
 │
 ├── tests/
-│   └── test_clean.py     # runs without a database
+│   ├── test_clean.py       # cleaning functions, no database
+│   └── test_import_csv.py  # parsing, counting and the import guard rails
 │
 ├── web/                  # the dashboard (Next.js). See "The dashboard".
 │   ├── app/                  routes: the list, and /company/[cf]
@@ -607,9 +608,11 @@ database, that is the file to open first.
 pytest
 ```
 
-91 tests, none of which need a database. Most of the website cases are real
-values copied out of the registry export. There is also a whole-file smoke
-test that runs only if you have a CSV in `data/raw/`, and is skipped otherwise.
+None of the unit tests need a database. Most of the website cases are real
+values copied out of the registry export. Two tests read the registry CSV in
+`data/raw/` — a whole-file cleaning smoke test and the registry-pool check —
+and are skipped when no export is present, so the suite is green on a fresh
+clone.
 
 `tests/test_dashboard.py` adds 24 end-to-end checks that drive the dashboard
 over HTTP — ranking, filtering, search, and how `unclear` is presented. They

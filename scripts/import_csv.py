@@ -87,10 +87,11 @@ def sha256_of_file(path: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
-def read_and_clean(path: pathlib.Path) -> tuple[list[dict], Counter]:
+def read_and_clean(path: pathlib.Path) -> tuple[list[dict], Counter, dict[str, str]]:
     """Parse the CSV and clean every usable row.
 
-    Returns (cleaned_rows, stats). Rows without a valid 11-digit codice fiscale
+    Returns (cleaned_rows, stats, columns), where `columns` maps each logical
+    field to the header actually found. Rows without a valid 11-digit codice fiscale
     are skipped — in the August 2026 export that is 274 completely empty rows
     left behind by the spreadsheet that produced the file.
     """

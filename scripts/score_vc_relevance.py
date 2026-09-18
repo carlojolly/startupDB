@@ -266,6 +266,16 @@ def db_tag_rows(results: list[Scored], run_id: int) -> list[tuple]:
 def attach_to_tag_run(results: list[Scored], run_id: int) -> None:
     """Add VC screening fields to an existing complete 200-company tag run."""
     _validate_production_results(results)
+    failed = [result for result in results if result.error]
+    if failed:
+        # A failed API call is stored as 'unclear' with a rationale that says
+        # the homepage was unavailable — untrue for a page that was read fine.
+        # Fix or re-run those before anything reaches the database.
+        raise SystemExit(
+            f"{len(failed)} companies failed VC scoring (see the review CSV's "
+            "error column); refusing to attach results that would be stored as "
+            "'unclear' with a misleading rationale."
+        )
     result_ids = {result.cf for result in results}
     with connect() as conn, conn.cursor() as cur:
         cur.execute(

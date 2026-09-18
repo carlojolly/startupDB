@@ -68,3 +68,26 @@ def test_database_rows_store_label_reason_and_prompt_provenance():
     ]
     assert all("vc_prompt=vc-relevance-v1-2026-09-13" in row[5] for row in rows)
     assert all(row[6] == "llm" for row in rows)
+
+
+def test_attach_refuses_results_that_contain_a_scoring_failure(monkeypatch):
+    import tag_companies
+
+    def unexpected_connect(*_args, **_kwargs):
+        raise AssertionError("must refuse before opening a database connection")
+
+    monkeypatch.setattr(score_vc_relevance, "connect", unexpected_connect)
+    frozen, _stats = tag_companies.load_sample(tag_companies.DEFAULT_SAMPLE_FILE)
+    results = [
+        score_vc_relevance.Scored(
+            cf, name, ateco, attivita, url,
+            score_vc_relevance.VCRelevance(vc_relevance="low", vc_relevance_reason="Bespoke."),
+            "http", "OK", 900,
+        )
+        for cf, name, attivita, ateco, url, _comune in frozen
+    ]
+    results[7].error = "APIConnectionError: boom"
+
+    import pytest
+    with pytest.raises(SystemExit, match="1 companies failed VC scoring"):
+        score_vc_relevance.attach_to_tag_run(results, run_id=13)

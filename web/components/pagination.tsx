@@ -16,6 +16,10 @@ export function Pagination({
 
   const from = (page - 1) * PAGE_SIZE + 1;
   const to = Math.min(page * PAGE_SIZE, total);
+  // Past the last page there is no window to describe, and "Previous" should
+  // land on the last real page rather than on another empty one.
+  const pastEnd = from > total;
+  const previous = Math.min(page - 1, pages);
   const href = (target: number) =>
     withParams(params, { page: target === 1 ? null : String(target) });
 
@@ -28,12 +32,20 @@ export function Pagination({
       className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-4 sm:px-6"
     >
       <p className="tnum text-[13px] text-ink-muted">
-        Showing <span className="font-medium text-ink">{from.toLocaleString("en-GB")}–{to.toLocaleString("en-GB")}</span>{" "}
-        of {total.toLocaleString("en-GB")}
+        {pastEnd ? (
+          <>
+            <span className="font-medium text-ink">{total.toLocaleString("en-GB")}</span> results
+          </>
+        ) : (
+          <>
+            Showing <span className="font-medium text-ink">{from.toLocaleString("en-GB")}–{to.toLocaleString("en-GB")}</span>{" "}
+            of {total.toLocaleString("en-GB")}
+          </>
+        )}
       </p>
       <div className="flex items-center gap-2">
         {page > 1 ? (
-          <Link href={href(page - 1)} className={step} scroll>
+          <Link href={href(previous)} className={step} scroll>
             Previous
           </Link>
         ) : (

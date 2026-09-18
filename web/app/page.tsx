@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import { Suspense } from "react";
 import wordmarkDark from "@/public/venture-atlas-dark.png";
 import { ActiveFilters } from "@/components/active-filters";
@@ -16,12 +17,13 @@ import {
   getRegions,
   searchCompanies,
 } from "@/lib/companies";
-import { SORTS } from "@/lib/model";
+import { PAGE_SIZE, SORTS } from "@/lib/model";
 import {
   countActive,
   parseFilters,
   parsePage,
   parseSort,
+  withParams,
 } from "@/lib/search-params";
 
 function Stat({ value, label }: { value: number; label: string }) {
@@ -62,6 +64,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
   const query = params.toString();
   const detailHref = (codiceFiscale: string) =>
     `/company/${codiceFiscale}${query ? `?${query}` : ""}`;
+
+  // A page number beyond the last page must not read as "no results".
+  const pastEnd = !rows.length && total > 0;
+  const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="flex min-h-full flex-col">
@@ -144,6 +150,24 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                       href={detailHref(company.codice_fiscale)}
                     />
                   ))}
+                </div>
+              ) : pastEnd ? (
+                <div className="px-4 py-24 text-center sm:px-6">
+                  <p className="display text-[17px]">
+                    This page is past the end of the results
+                  </p>
+                  <p className="mx-auto mt-2 max-w-sm text-[13px] text-ink-muted">
+                    <span className="tnum">{total.toLocaleString("en-GB")}</span>{" "}
+                    {total === 1 ? "company matches" : "companies match"}, on{" "}
+                    <span className="tnum">{lastPage.toLocaleString("en-GB")}</span>{" "}
+                    {lastPage === 1 ? "page" : "pages"}.{" "}
+                    <Link
+                      href={withParams(params, { page: null })}
+                      className="text-brand underline underline-offset-2"
+                    >
+                      Back to the first page
+                    </Link>
+                  </p>
                 </div>
               ) : (
                 <div className="px-4 py-24 text-center sm:px-6">

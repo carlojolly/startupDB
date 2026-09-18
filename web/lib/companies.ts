@@ -48,26 +48,37 @@ const tagged = () => sql`
   )
 `;
 
-// Every sort ends on the company name so paging is stable. Within whatever the
-// reader asked to sort by, the strongest signal comes first: VC relevance, then
-// homepage evidence — the same tie-break the default sort uses. NULLS LAST keeps
-// companies with no recorded province out of the top of the location sort.
-// Built fresh per query: a postgres.js fragment is consumed when it is nested.
-const signal = () => sql`vc_rank, evidence_rank, denominazione`;
+// Every sort ends on the company name and then the fiscal code, so paging is
+// stable even for the few dozen companies that share a registered name. Within
+// whatever the reader asked to sort by, the strongest signal comes first: VC
+// relevance, then homepage evidence — the same tie-break the default sort uses.
+// NULLS LAST keeps companies with no recorded province out of the top of the
+// location sort. Built fresh per query: a postgres.js fragment is consumed when
+// it is nested.
+const signal = () => sql`vc_rank, evidence_rank, denominazione, codice_fiscale`;
 
 const ORDER_BY: Record<SortKey, () => ReturnType<typeof sql>> = {
   relevance: () => sql`ORDER BY ${signal()}`,
-  name: () => sql`ORDER BY denominazione`,
+  name: () => sql`ORDER BY denominazione, codice_fiscale`,
   location: () =>
     sql`ORDER BY regione NULLS LAST, provincia NULLS LAST, comune NULLS LAST, ${signal()}`,
   sector: () =>
     sql`ORDER BY sector_rank NULLS LAST, sector NULLS LAST, ${signal()}`,
-  evidence: () => sql`ORDER BY evidence_rank, vc_rank, denominazione`,
+  evidence: () => sql`ORDER BY evidence_rank, vc_rank, denominazione, codice_fiscale`,
 };
+
+/**
+ * `%`, `_` and `\` are pattern characters inside ILIKE. The reader means them
+ * literally, and a pattern ending in a bare backslash is a Postgres error.
+ */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
 
 function conditions(filters: Filters) {
   const parts = [];
-  if (filters.q) parts.push(sql`denominazione ILIKE ${"%" + filters.q + "%"}`);
+  if (filters.q)
+    parts.push(sql`denominazione ILIKE ${"%" + escapeLike(filters.q) + "%"}`);
   // Overlap: a company matches if any of its values is selected. Multi-value
   // companies therefore show up under both of their sectors.
   if (filters.sector.length)
@@ -99,6 +110,15 @@ export async function searchCompanies(
     ${ORDER_BY[sort]()}
     LIMIT ${PAGE_SIZE} OFFSET ${(page - 1) * PAGE_SIZE}
   `;
+  if (!rows.length && page > 1) {
+    // Past the last page: the window count above sees no rows, so count the
+    // filtered set on its own rather than reporting a false zero.
+    const [{ total }] = await sql<{ total: number }[]>`
+      ${tagged()}
+      SELECT count(*)::int AS total FROM company ${conditions(filters)}
+    `;
+    return { rows, total };
+  }
   return { rows, total: rows.length ? Number(rows[0].total) : 0 };
 }
 

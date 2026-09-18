@@ -167,6 +167,22 @@ def test_dead_homepage_is_unclear_without_calling_model(monkeypatch):
     assert result.usage is None
 
 
+def test_dry_run_results_are_never_written(monkeypatch):
+    def unexpected_connect(*_args, **_kwargs):
+        raise AssertionError("a dry run must not open a database connection")
+
+    monkeypatch.setattr(tag_companies, "connect", unexpected_connect)
+    stub = tag_companies.Tagged(
+        "02781910209", "FLAB S.R.L.", "Software production",
+        "https://www.cantieresicuro.com",
+        tag_companies.stub_tags("FLAB S.R.L.", "OK"), None,
+        page_chars=7045, fetch_bucket="OK", fetch_pass="http",
+    )
+
+    with pytest.raises(ValueError, match="must not be called for a dry run"):
+        tag_companies.write_results([stub], dry_run=True)
+
+
 def test_run_notes_state_tls_verification_policy():
     result = tag_companies.Tagged(
         "02781910209", "FLAB S.R.L.", "Software production",

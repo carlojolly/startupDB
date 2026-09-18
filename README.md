@@ -293,7 +293,7 @@ It needs `OPENAI_API_KEY` in `.env` (create one at
 [platform.openai.com/api-keys](https://platform.openai.com/api-keys)).
 
 ```bash
-python scripts/tag_companies.py --dry-run    # whole pipeline, no API calls, no cost
+python scripts/tag_companies.py --dry-run    # whole pipeline, no API calls, no cost, nothing written
 python scripts/tag_companies.py              # frozen 200, writes to the database
 ```
 

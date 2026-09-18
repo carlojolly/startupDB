@@ -630,7 +630,12 @@ def build_run_notes(results: list[Tagged]) -> str:
     )
 
 
-def write_results(results: list[Tagged], dry_run: bool) -> int | None:
+def write_results(results: list[Tagged], dry_run: bool = False) -> int | None:
+    if dry_run:
+        # Stub tags are placeholders for exercising the pipeline. They must
+        # never reach the database: current_company_tags would pick the run
+        # up as "finished" and the dashboard would show them.
+        raise ValueError("write_results() must not be called for a dry run")
     if not results:
         print("Nothing to write — the run contains no companies.")
         return None
@@ -640,8 +645,7 @@ def write_results(results: list[Tagged], dry_run: bool) -> int | None:
         cur.execute(
             "INSERT INTO tag_runs (model, prompt_version, notes) VALUES (%s, %s, %s) "
             "RETURNING id",
-            (MODEL if not dry_run else f"{MODEL} (DRY RUN STUB)", PROMPT_VERSION,
-             build_run_notes(results)),
+            (MODEL, PROMPT_VERSION, build_run_notes(results)),
         )
         run_id = cur.fetchone()[0]
 
@@ -788,7 +792,8 @@ def main() -> None:
                    help=f"OpenAI model (default: {MODEL})")
     p.add_argument("--timeout", type=float, default=8.0)
     p.add_argument("--dry-run", action="store_true",
-                   help="Exercise the whole pipeline with stub tags: no API key, no cost.")
+                   help="Exercise the whole pipeline with stub tags: no API key, "
+                        "no cost, and nothing written to the database.")
     p.add_argument("--no-write", action="store_true", help="Skip the database write")
     args = p.parse_args()
     configure_model(args.model)
@@ -813,10 +818,12 @@ def main() -> None:
     results = asyncio.run(tag_all(sample, fetched, args.api_concurrency, args.dry_run))
     elapsed = (datetime.datetime.now() - started).total_seconds()
 
-    if not args.no_write:
-        write_results(results, args.dry_run)
-    else:
+    if args.dry_run:
+        print("\nDRY RUN — stub tags are never written to the database")
+    elif args.no_write:
         print("\n--no-write: nothing written to the database")
+    else:
+        write_results(results)
 
     print_table(results)
     print_summary(results, stats, elapsed)

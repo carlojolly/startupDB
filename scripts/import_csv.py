@@ -36,6 +36,14 @@ from db import connect
 # is 'denominazione' and not '﻿denominazione'.
 CSV_ENCODING = "utf-8-sig"
 
+# The four date columns. A value that is present but does not parse is counted
+# and, by default, blocks the import: a silent NULL would change every content
+# hash and write a false snapshot for every company in the file.
+DATE_FIELDS = (
+    "data_iscrizione_sezione_startup", "data_iscrizione_registro_imprese",
+    "data_inizio_attivita", "data_dichiarazione",
+)
+
 
 class _DryRunRollback(Exception):
     """Raised to abort the transaction at the end of a --dry-run.
@@ -107,6 +115,12 @@ def read_and_clean(path: pathlib.Path) -> tuple[list[dict], Counter]:
 
             seen_cf.add(cf)
             row = clean.clean_row(raw_row, columns)
+            for field in DATE_FIELDS:
+                raw_value = (raw_row.get(columns[field]) or "").strip()
+                if raw_value and row[field] is None:
+                    stats["unparsed_dates"] += 1
+                    if stats["unparsed_dates"] <= 5:
+                        print(f"  ! unparseable date in {field} for {cf}: {raw_value!r}")
             row["codice_fiscale"] = cf
             row["content_hash"] = clean.content_hash(row)
             # Store the original verbatim, minus empty cells, as an escape hatch.
@@ -114,7 +128,24 @@ def read_and_clean(path: pathlib.Path) -> tuple[list[dict], Counter]:
             cleaned_rows.append(row)
             stats["rows_valid"] += 1
 
-    return cleaned_rows, stats
+    return cleaned_rows, stats, columns
+
+
+def check_unparsed_dates(count: int, allow: bool) -> None:
+    """Refuse to import a file whose dates stopped parsing.
+
+    If the registry changes its date format, every date in the file would
+    otherwise become NULL, every content hash would change, and one week
+    would write a false snapshot for every company — rows that the
+    append-only rule then forbids removing.
+    """
+    if count and not allow:
+        raise SystemExit(
+            f"\nREFUSING TO IMPORT: {count} date value(s) could not be parsed as "
+            f"dd/mm/yyyy.\nIf the registry changed its date format, fix "
+            f"clean.parse_date first. To load the file anyway with those dates "
+            f"stored as NULL, re-run with --allow-unparsed-dates."
+        )
 
 
 def data_vintage(rows: list[dict]) -> datetime.date | None:
@@ -139,8 +170,9 @@ def main() -> None:
     parser.add_argument("--database-url", help="Override DATABASE_URL from .env")
     parser.add_argument(
         "--as-of",
-        help="Date this snapshot represents (YYYY-MM-DD). "
-             "Defaults to the file's modification date.",
+        help="Date this snapshot represents (YYYY-MM-DD). Defaults to the "
+             "newest registration date in the file, then to the file's "
+             "modification date.",
     )
     parser.add_argument(
         "--dry-run", action="store_true",
@@ -150,6 +182,11 @@ def main() -> None:
         "--no-delist", action="store_true",
         help="Skip marking absent companies inactive. Use when loading an old "
              "file after a newer one, which would otherwise delist wrongly.",
+    )
+    parser.add_argument(
+        "--allow-unparsed-dates", action="store_true",
+        help="Load the file even if some date values do not parse (they are "
+             "stored as NULL). By default that refuses the import.",
     )
     parser.add_argument(
         "--force", action="store_true",
@@ -168,7 +205,7 @@ def main() -> None:
     print(file_hash[:16] + "...")
 
     print("Reading CSV ...")
-    rows, stats = read_and_clean(path)
+    rows, stats, columns = read_and_clean(path)
 
     # Prefer the data's own vintage over any filesystem timestamp.
     vintage = data_vintage(rows)
@@ -188,6 +225,11 @@ def main() -> None:
         print(f"  {stats['skipped_blank']} blank rows skipped (spreadsheet padding)")
     if stats["skipped_bad_cf"]:
         print(f"  {stats['skipped_bad_cf']} rows skipped: malformed codice fiscale")
+    if stats["skipped_duplicate_in_file"]:
+        print(f"  {stats['skipped_duplicate_in_file']} rows skipped: duplicate codice fiscale")
+    if stats["unparsed_dates"]:
+        print(f"  {stats['unparsed_dates']} date values could not be parsed")
+    check_unparsed_dates(stats["unparsed_dates"], args.allow_unparsed_dates)
     if not rows:
         raise SystemExit("Nothing to import.")
 
@@ -242,7 +284,8 @@ def main() -> None:
                     """,
                     (
                         path.name, file_hash, path.stat().st_size,
-                        datetime.datetime.fromtimestamp(path.stat().st_mtime),
+                        datetime.datetime.fromtimestamp(path.stat().st_mtime,
+                                                        tz=datetime.timezone.utc),
                         stats["rows_in_file"], stats["rows_valid"],
                         stats["rows_in_file"] - stats["rows_valid"], vintage,
                     ),
@@ -372,14 +415,24 @@ def main() -> None:
                     print("Delisted  : skipped (--no-delist)")
 
                 # --- 8. Close the import record ----------------------------------
+                # The counts a later reader needs to reconcile this load, so a
+                # silent loss is visible from the imports table alone.
+                notes = (
+                    f"skipped: blank={stats['skipped_blank']}, "
+                    f"bad_cf={stats['skipped_bad_cf']}, "
+                    f"duplicate_in_file={stats['skipped_duplicate_in_file']}; "
+                    f"unparsed_dates={stats['unparsed_dates']}; "
+                    f"unchanged={unchanged}"
+                )
                 cur.execute(
                     """
                     UPDATE imports
                        SET snapshots_inserted = %s, companies_new = %s,
-                           companies_delisted = %s, completed_at = now()
+                           companies_delisted = %s, completed_at = now(),
+                           notes = %s
                      WHERE id = %s
                     """,
-                    (len(to_insert), len(new_companies), delisted, import_id),
+                    (len(to_insert), len(new_companies), delisted, notes, import_id),
                 )
 
             if args.dry_run:

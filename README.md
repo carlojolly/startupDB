@@ -170,7 +170,8 @@ written at all — there is no half-loaded state to clean up.
 | Flag | What it does |
 |---|---|
 | `--dry-run` | Runs the entire import, prints the summary, then rolls back. |
-| `--as-of 2026-08-30` | Sets the snapshot date. Defaults to the file's modification time. |
+| `--as-of 2026-08-30` | Sets the snapshot date. Defaults to the newest registration date in the file (its data vintage), then to the file's modification time. |
+| `--allow-unparsed-dates` | By default the import refuses a file in which any date value fails to parse, because a format change would otherwise silently NULL every date and write a false snapshot for every company. This flag loads it anyway. |
 | `--no-delist` | Skips marking absent companies inactive. Use when loading an **older** file after a newer one, which would otherwise delist everyone wrongly. |
 | `--force` | Re-imports a file already loaded, deleting the previous import and its snapshots first. Repair tool — not part of the normal workflow. |
 

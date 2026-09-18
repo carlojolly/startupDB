@@ -71,7 +71,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
 
   return (
     <div className="flex min-h-full flex-col">
-      <SiteHeader provenance={provenance} />
+      <SiteHeader />
 
       {/* Masthead. Dark carries the identity and the search; the data below it
           stays light, which is where dense small text has to be readable. */}

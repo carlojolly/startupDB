@@ -139,7 +139,12 @@ export default async function CompanyPage({
 
   return (
     <div className="flex min-h-full flex-col">
-      <SiteHeader provenance={provenance} />
+      <SiteHeader
+        feedbackAbout={{
+          label: company.denominazione,
+          path: `/company/${company.codice_fiscale}`,
+        }}
+      />
 
       <section className="on-navy grid-field bg-navy text-on-navy">
         <div className="mx-auto max-w-[1120px] px-4 pt-6 pb-9 sm:px-6">

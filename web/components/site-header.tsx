@@ -1,18 +1,30 @@
 import Image from "next/image";
 import Link from "next/link";
-import type { Provenance } from "@/lib/model";
 import wordmark from "@/public/venture-atlas.png";
 
-function formatDate(value: Date | string | null | undefined): string {
-  if (!value) return "unknown date";
-  return new Date(value).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
+/**
+ * Where "Feedback" goes. A mail link needs no backend, no migration and no
+ * third-party form, which keeps the dashboard free of runtime services;
+ * change the address here if feedback should reach someone else.
+ */
+const FEEDBACK_EMAIL = "carlojolly@icloud.com";
 
-export function SiteHeader({ provenance }: { provenance: Provenance | null }) {
+export function SiteHeader({
+  feedbackAbout,
+}: {
+  /** The thing the reader is looking at, so a mail arrives with context. */
+  feedbackAbout?: { label: string; path: string };
+}) {
+  const subject = feedbackAbout
+    ? `VentureAtlas feedback: ${feedbackAbout.label}`
+    : "VentureAtlas feedback";
+  const body = feedbackAbout
+    ? `Page: ${feedbackAbout.path}\n\n`
+    : "";
+  const mailto = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}${
+    body ? `&body=${encodeURIComponent(body)}` : ""
+  }`;
+
   return (
     <header className="on-navy sticky top-0 z-40 border-b border-panel-line/70 bg-navy text-on-navy">
       <div className="mx-auto flex h-14 max-w-[1560px] items-center gap-4 px-4 sm:px-6">
@@ -36,14 +48,25 @@ export function SiteHeader({ provenance }: { provenance: Provenance | null }) {
           Italian innovative-startup registry
         </span>
 
-        {provenance ? (
-          <span className="ml-auto hidden items-center gap-2 rounded-full border border-panel-line bg-panel px-3 py-1.5 text-2xs text-on-navy-muted md:flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber" />
-            <span className="tnum">
-              Tag run {provenance.run_id} · {formatDate(provenance.finished_at)}
-            </span>
-          </span>
-        ) : null}
+        <a
+          href={mailto}
+          className="ml-auto inline-flex h-8 items-center gap-2 rounded-full border border-panel-line bg-panel px-3 text-[12px] font-medium text-on-navy-muted transition-colors hover:border-on-navy-faint hover:text-on-navy"
+        >
+          <svg
+            aria-hidden
+            viewBox="0 0 14 14"
+            className="h-3.5 w-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+          >
+            <path
+              d="M2.5 3.5h9a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H6l-2.5 2v-2h-1a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z"
+              strokeLinejoin="round"
+            />
+          </svg>
+          Feedback
+        </a>
       </div>
     </header>
   );

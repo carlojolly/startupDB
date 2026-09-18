@@ -7,6 +7,7 @@ import sys
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
+import build_sample_200  # noqa: E402
 import tag_registry_batch  # noqa: E402
 
 
@@ -15,6 +16,8 @@ class Attrs:
         self.__dict__.update(kwargs)
 
 
+@pytest.mark.skipif(not build_sample_200.SOURCE.exists(),
+                    reason="needs the git-ignored registry export in data/raw/")
 def test_registry_pool_is_clean_complete_and_stably_ordered():
     rows = tag_registry_batch.registry_rows()
     assert len(rows) == 9_620

@@ -29,7 +29,7 @@ Every script that writes, writes there. Treat it accordingly (see "Hard rules").
 ```bash
 .venv/bin/python -m pytest -q            # 100+ offline tests, ~3 s, no DB, no network
 cd web && npm run lint                   # eslint
-cd web && npx tsc --noEmit               # typecheck
+cd web && npx next typegen && npx tsc --noEmit   # typecheck (typegen makes the git-ignored type stubs)
 cd web && npm run build                  # build; succeeds with no DATABASE_URL
 python scripts/import_csv.py FILE --dry-run   # full import, then rollback
 python scripts/tag_companies.py --dry-run     # fetch + stub tags, nothing written
@@ -162,7 +162,7 @@ docs/audit/                 the 2026-09-18 senior review (findings + fixes)
    is the operator manual and is expected to be accurate.
 5. Before finishing, run the full offline check and paste real output:
    ```bash
-   .venv/bin/python -m pytest -q && (cd web && npm run lint && npx tsc --noEmit && npm run build)
+   .venv/bin/python -m pytest -q && (cd web && npm run lint && npx next typegen && npx tsc --noEmit && npm run build)
    ```
    Anything that needs the database is **not verified** from this machine.
    Say so explicitly rather than implying it was run.

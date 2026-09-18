@@ -109,11 +109,16 @@ Run these only when the user asks for that specific run. Prefer the
   refused unless `--allow-ateco-reclassification`.
 - Delisting more than 5% of active companies in one import is refused unless
   `--allow-mass-delist` (a normal week delists a few dozen).
-- The direct Supabase host `db.<ref>.supabase.co` is **IPv6-only**. On a
-  network without IPv6 (this development machine included) it does not
-  resolve. Use the Session pooler URI (port 5432). **Never** use the
-  Transaction pooler (6543) for the Python scripts: it rejects prepared
-  statements. The dashboard tolerates both (`prepare: false`).
+- The direct Supabase host `db.<ref>.supabase.co` **no longer resolves at
+  all**. It was documented here as IPv6-only, but as of 2026-09-18 it returns
+  no A, AAAA or CNAME record from any public resolver, so no network reaches
+  it and the IPv4/IPv6 question is moot. `.env` uses the **Session pooler**
+  URI instead (`aws-<n>-<region>.pooler.supabase.com`, port 5432, username
+  `postgres.<ref>`), which is what the Supabase dashboard now hands out.
+  **Never** use the Transaction pooler (6543) for the Python scripts: it
+  rejects prepared statements. The dashboard tolerates both (`prepare: false`).
+  A `getaddrinfo ENOTFOUND db.<ref>.supabase.co` in the dev server means the
+  old direct host has come back from somewhere — check `.env` first.
 - Size bands come as opaque codes (`classe_produzione = 'A'`); the `ref_*`
   tables decode them. Query `companies_current`, not the raw tables.
 - `unclear` is a valid model output for every closed field and means "not

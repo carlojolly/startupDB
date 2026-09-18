@@ -452,11 +452,11 @@ database, not a static host.
    environment you build (production *and* preview — a preview build with the
    variable missing still serves 500s at request time).
 3. **Use the Supabase pooler host, not the direct one.** This is the part that
-   bites. The direct `db.<ref>.supabase.co` hostname resolves over **IPv6 only**
-   — it has no A record — so it works from a laptop on an IPv6 network and times
-   out from most hosting providers. Take the **Session pooler** URI (port 5432)
-   or the **Transaction pooler** URI (port 6543) from the same Supabase page.
-   Both are IPv4-compatible, and the transaction pooler works here because
+   bites. The direct `db.<ref>.supabase.co` hostname **no longer resolves at
+   all** — as of September 2026 it publishes no A, AAAA or CNAME record, so it
+   cannot be used from anywhere. Take the **Session pooler** URI (port 5432) or
+   the **Transaction pooler** URI (port 6543) from the same Supabase page. Both
+   are IPv4-compatible, and the transaction pooler works here because
    `lib/db.ts` already sets `prepare: false`.
 
 The connection is opened on the first query rather than at import, so a build

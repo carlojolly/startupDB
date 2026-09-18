@@ -6,7 +6,7 @@ export default function NotFound() {
       <p className="eyebrow text-amber">404</p>
       <h1 className="display mt-2 text-2xl">Company not found</h1>
       <p className="mt-2 max-w-sm text-sm text-on-navy-muted">
-        No company with that codice fiscale is in the current tag run.
+        No company with that codice fiscale is in the published tag run.
       </p>
       <Link
         href="/"

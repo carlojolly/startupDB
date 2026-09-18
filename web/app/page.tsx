@@ -155,7 +155,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                       ? `No company name contains “${filters.q}”. Try a shorter part of the name.`
                       : countActive(filters)
                         ? "Try removing a filter, or widening the sector and product type."
-                        : "The tag run behind this view returned no companies."}
+                        : provenance
+                          ? "The published tag run returned no companies."
+                          : "No tag run is published yet. Run scripts/publish_run.py --run-id N to choose one."}
                   </p>
                 </div>
               )}

@@ -200,7 +200,7 @@ when" against `company_snapshots`.
 |---|---|
 | `companies_current` | **Start here.** One row per company with its latest snapshot, every coded band already decoded, and the region joined in. This is what a frontend should query. |
 | `company_change_log` | Every recorded change with the previous value alongside it. |
-| `current_company_tags` | Tags from the most recent tagging run only. |
+| `current_company_tags` | Tags from the **published** run only — the one `scripts/publish_run.py` points at. |
 | `import_history` | Health check on the weekly loads. |
 
 ### The reference tables earn their keep
@@ -333,6 +333,17 @@ Every run writes a `tag_runs` row recording the model and `PROMPT_VERSION`, so
 a revised prompt can be compared against an earlier run instead of replacing
 it. Bump `PROMPT_VERSION` in `scripts/tag_companies.py` whenever you change the
 prompt or the schema.
+
+Finishing a run does **not** change what the dashboard shows. Once a run has
+been reviewed, publish it explicitly:
+
+```bash
+python scripts/publish_run.py                # what is published now
+python scripts/publish_run.py --run-id 17    # make run 17 the one on screen
+```
+
+The script refuses unfinished runs, dry-run stubs and runs whose tag count
+does not match their `companies_tagged` record.
 
 ```bash
 python scripts/export_tags.py --run-id 4     # export any run to data/*.csv
@@ -468,7 +479,11 @@ keep in sync with the schema. No auth, no caching layer, no ORM.
 ### How it reads the data
 
 One query per page joins `companies_current` to `current_company_tags`, which
-is pinned to the newest finished tag run — **run 17** at the time of writing.
+shows the run recorded in the one-row `published_run` table (see
+`sql/007_published_run.sql`). Nothing is published automatically: a new run
+appears only after `python scripts/publish_run.py --run-id N`. Applying the
+migration seeds the pointer with the newest finished run, so the first
+`init_db.py` after pulling this change alters nothing on screen.
 The pivot uses `array_agg(tag_value ORDER BY id)`, because insertion order is
 what records the pipeline's primary-value-first ordering for the multi-value
 fields; the UI shows the first value with more weight and labels the rest as
@@ -542,7 +557,8 @@ can fix it with SQL rather than re-importing.
 │   ├── 003_views.sql         companies_current and friends
 │   ├── 004_search_indexes.sql trigram indexes for name/town search
 │   ├── 005_tag_fetch_provenance.sql  which fetch pass produced each tag
-│   └── 006_import_data_vintage.sql   how current each import's data was
+│   ├── 006_import_data_vintage.sql   how current each import's data was
+│   └── 007_published_run.sql         which tag run the dashboard shows
 │
 ├── scripts/
 │   ├── db.py             # the one place that knows how to connect
@@ -552,6 +568,7 @@ can fix it with SQL rather than re-importing.
 │   ├── test_websites.py  # measures which company websites are reachable
 │   ├── render.py         # pass 2: headless-browser rendering
 │   ├── tag_companies.py  # LLM tagging pipeline
+│   ├── publish_run.py    # choose which tag run the dashboard shows
 │   └── export_tags.py    # export a tag run to CSV
 │
 ├── tests/

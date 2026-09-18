@@ -14,6 +14,15 @@ import textwrap
 from db import connect
 
 
+def _where(company: str | None, page: str | None) -> str:
+    """What the note was written about, in words rather than in a URL path."""
+    if company:
+        return company
+    if not page or page == "/":
+        return "the results list"
+    return page
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--new", action="store_true", help="Only unhandled notes")
@@ -41,7 +50,7 @@ def main() -> None:
                 SELECT f.id, f.created_at, f.message, f.page, f.run_id,
                        f.handled_at, c.denominazione
                 FROM feedback f
-                LEFT JOIN companies c ON c.codice_fiscale = f.codice_fiscale
+                LEFT JOIN companies_current c ON c.codice_fiscale = f.codice_fiscale
                 WHERE (%s IS FALSE OR f.handled_at IS NULL)
                 ORDER BY f.created_at DESC
                 LIMIT %s
@@ -56,7 +65,7 @@ def main() -> None:
 
     for note_id, created, message, page, run_id, handled, company in rows:
         mark = "" if handled is None else "  (handled)"
-        where = company or page or "the dashboard"
+        where = _where(company, page)
         print(f"\n#{note_id}  {created:%Y-%m-%d %H:%M}  on {where}  [run {run_id}]{mark}")
         print(textwrap.indent(textwrap.fill(message, 76), "    "))
 

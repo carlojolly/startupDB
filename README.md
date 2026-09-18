@@ -495,6 +495,12 @@ shows the run recorded in the one-row `published_run` table (see
 appears only after `python scripts/publish_run.py --run-id N`. Applying the
 migration seeds the pointer with the newest finished run, so the first
 `init_db.py` after pulling this change alters nothing on screen.
+
+> **That migration is not applied to the live database.** Checked on
+> 2026-09-18: `published_run` does not exist there, and `current_company_tags`
+> still selects the newest finished run by itself, which is the behaviour 007
+> was written to stop. Until someone runs `init_db.py`, `publish_run.py` will
+> fail and a tag run that finishes goes on screen unasked.
 The pivot uses `array_agg(tag_value ORDER BY id)`, because insertion order is
 what records the pipeline's primary-value-first ordering for the multi-value
 fields; the UI shows the first value with more weight and labels the rest as

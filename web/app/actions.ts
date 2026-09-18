@@ -34,7 +34,7 @@ export async function submitFeedback(
     console.error("feedback insert failed:", cause);
     return {
       status: "error",
-      error: "That did not save — nothing was recorded. Try again in a moment.",
+      error: "That did not save, so nothing was recorded. Try again in a moment.",
     };
   }
   return { status: "sent" };

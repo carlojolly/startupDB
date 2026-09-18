@@ -44,6 +44,11 @@ DATE_FIELDS = (
     "data_inizio_attivita", "data_dichiarazione",
 )
 
+# A normal week delists a few dozen of ~11,500 companies (they age out of the
+# five-year window). Anything approaching this share means the file is
+# truncated or partial, not that hundreds of companies left the registry.
+MAX_DELIST_SHARE = 0.05
+
 
 class _DryRunRollback(Exception):
     """Raised to abort the transaction at the end of a --dry-run.
@@ -148,6 +153,26 @@ def check_unparsed_dates(count: int, allow: bool) -> None:
         )
 
 
+def check_delist_share(would_delist: int, active_total: int, allow: bool) -> None:
+    """Refuse to mark an implausible share of active companies inactive.
+
+    Delisting is reversible — a company that reappears is revived — but a
+    truncated file would still flip `is_active` for thousands of rows and
+    overwrite their `delisted_on` history in one transaction.
+    """
+    if not would_delist or allow or not active_total:
+        return
+    share = would_delist / active_total
+    if share > MAX_DELIST_SHARE:
+        raise SystemExit(
+            f"\nREFUSING TO IMPORT: this file would delist {would_delist:,} of "
+            f"{active_total:,} active companies ({share:.1%}), above the "
+            f"{MAX_DELIST_SHARE:.0%} safety limit.\nThat usually means the export "
+            f"is truncated or partial. Check the row count against last week's, "
+            f"and if the delisting is genuine re-run with --allow-mass-delist."
+        )
+
+
 def data_vintage(rows: list[dict]) -> datetime.date | None:
     """The newest registration date in the file — the data's own vintage.
 
@@ -187,6 +212,12 @@ def main() -> None:
         "--allow-unparsed-dates", action="store_true",
         help="Load the file even if some date values do not parse (they are "
              "stored as NULL). By default that refuses the import.",
+    )
+    parser.add_argument(
+        "--allow-mass-delist", action="store_true",
+        help=f"Permit delisting more than {MAX_DELIST_SHARE:.0%} of active "
+             "companies in one import. By default that refuses the import, "
+             "because it almost always means a truncated file.",
     )
     parser.add_argument(
         "--force", action="store_true",
@@ -398,6 +429,19 @@ def main() -> None:
                 # --- 7. Delisting ------------------------------------------------
                 delisted = 0
                 if not args.no_delist:
+                    # Count first, inside the transaction: a refusal here rolls
+                    # everything back, so nothing is half-applied.
+                    cur.execute(
+                        """
+                        SELECT count(*) FILTER (WHERE last_seen_import_id IS DISTINCT FROM %s),
+                               count(*)
+                          FROM companies
+                         WHERE is_active
+                        """,
+                        (import_id,),
+                    )
+                    would_delist, active_total = cur.fetchone()
+                    check_delist_share(would_delist, active_total, args.allow_mass_delist)
                     cur.execute(
                         """
                         UPDATE companies

@@ -165,6 +165,11 @@ corrupt the history:
 The whole import runs in **one transaction**. If it fails halfway, nothing is
 written at all — there is no half-loaded state to clean up.
 
+Two guard rails refuse a suspicious file rather than loading it: more than 5%
+of active companies about to be delisted (a truncated export), and any date
+value that fails to parse (a format change). Each has a flag to override it for
+one run, listed below, so an unusual week is a decision rather than an accident.
+
 ### Useful flags
 
 | Flag | What it does |
@@ -173,6 +178,7 @@ written at all — there is no half-loaded state to clean up.
 | `--as-of 2026-08-30` | Sets the snapshot date. Defaults to the newest registration date in the file (its data vintage), then to the file's modification time. |
 | `--allow-unparsed-dates` | By default the import refuses a file in which any date value fails to parse, because a format change would otherwise silently NULL every date and write a false snapshot for every company. This flag loads it anyway. |
 | `--no-delist` | Skips marking absent companies inactive. Use when loading an **older** file after a newer one, which would otherwise delist everyone wrongly. |
+| `--allow-mass-delist` | The import refuses to delist more than 5% of active companies in one go — a normal week delists a few dozen, and a bigger number means the file is truncated. This flag permits it when the delisting is real. |
 | `--force` | Re-imports a file already loaded, deleting the previous import and its snapshots first. Repair tool — not part of the normal workflow. |
 
 ---

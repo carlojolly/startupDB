@@ -94,3 +94,12 @@ def test_unparsed_dates_block_the_import_unless_allowed():
     import_csv.check_unparsed_dates(3, allow=True)
     with pytest.raises(SystemExit, match="3 date value"):
         import_csv.check_unparsed_dates(3, allow=False)
+
+
+def test_delist_guard_allows_normal_churn_and_refuses_a_truncated_file():
+    import_csv.check_delist_share(0, 11_500, allow=False)       # first import, nothing active
+    import_csv.check_delist_share(40, 11_500, allow=False)      # a normal week (0.35%)
+    import_csv.check_delist_share(575, 11_500, allow=False)     # exactly 5%: still fine
+    import_csv.check_delist_share(8_500, 11_500, allow=True)    # override honoured
+    with pytest.raises(SystemExit, match="8,500 of 11,500 active companies"):
+        import_csv.check_delist_share(8_500, 11_500, allow=False)

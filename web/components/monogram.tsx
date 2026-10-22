@@ -1,5 +1,5 @@
 /**
- * A tinted monogram in place of a logo. The registry has no company logos and
+ * A neutral monogram in place of a logo. The registry has no company logos and
  * fetching favicons would hand every company's domain to a third party, so the
  * initials are derived from the name the registry itself holds.
  */
@@ -90,32 +90,11 @@ export function initials(name: string): string {
   return source[0][0] + source[1][0];
 }
 
-// Restrained tints, all of them readable at 12px semibold.
-const TINTS = [
-  "bg-[#e7edf3] text-[#33536e]",
-  "bg-[#e4eefd] text-[#1c5ab5]",
-  "bg-[#dff1ee] text-[#1f6b62]",
-  "bg-[#ece9fa] text-[#4e3fa6]",
-  "bg-[#fcf0d9] text-[#8a6900]",
-  "bg-[#fbe9ec] text-[#9b3448]",
-];
-
-/** Stable per company, so a company keeps the same colour between sessions. */
-function tintFor(seed: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = Math.imul(hash ^ seed.charCodeAt(i), 0x01000193) >>> 0;
-  }
-  return TINTS[hash % TINTS.length];
-}
-
 export function Monogram({
   name,
-  seed,
   size = "md",
 }: {
   name: string;
-  seed: string;
   size?: "md" | "lg";
 }) {
   const box =
@@ -125,7 +104,7 @@ export function Monogram({
   return (
     <span
       aria-hidden
-      className={`${box} ${tintFor(seed)} flex shrink-0 items-center justify-center font-semibold tracking-tight select-none`}
+      className={`${box} bg-surface-sunk text-ink-muted ring-1 ring-inset ring-line flex shrink-0 items-center justify-center font-semibold tracking-tight select-none`}
     >
       {initials(name)}
     </span>

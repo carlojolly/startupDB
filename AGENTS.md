@@ -9,7 +9,7 @@ fix this file in the same change.
 
 A searchable database of Italian innovative startups, loaded weekly from the
 public registry CSV into Postgres **append-only**, enriched offline with
-LLM-generated tags, and read by a Next.js dashboard (VentureAtlas).
+LLM-generated tags, and read by a Next.js dashboard (Glimpse).
 
 Two halves, one database, one credential file:
 

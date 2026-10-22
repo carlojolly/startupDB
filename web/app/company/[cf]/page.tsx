@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { GlimpseLogo } from "@/components/glimpse-logo";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -12,7 +12,6 @@ import {
 } from "@/components/signals";
 import { SiteHeader } from "@/components/site-header";
 import { getCompany, getProvenance } from "@/lib/companies";
-import wordmarkDark from "@/public/venture-atlas-dark.png";
 import {
   CUSTOMER_MODEL,
   FETCH_QUALITY_MEANING,
@@ -29,7 +28,7 @@ export async function generateMetadata({
   const company = await getCompany(cf);
   return {
     title: company
-      ? `${company.denominazione} — VentureAtlas`
+      ? `${company.denominazione} — Glimpse`
       : "Company not found",
   };
 }
@@ -146,7 +145,7 @@ export default async function CompanyPage({
         }}
       />
 
-      <section className="on-navy grid-field bg-navy text-on-navy">
+      <section className="on-navy bg-navy text-on-navy">
         <div className="mx-auto max-w-[1120px] px-4 pt-6 pb-9 sm:px-6">
           <Link
             href={backHref}
@@ -172,7 +171,6 @@ export default async function CompanyPage({
           <div className="mt-5 flex items-start gap-4">
             <Monogram
               name={company.denominazione}
-              seed={company.codice_fiscale}
               size="lg"
             />
 
@@ -231,7 +229,7 @@ export default async function CompanyPage({
                 className={`inline-flex h-10 items-center gap-2 rounded-lg px-4 text-[13px] font-semibold transition-colors ${
                   quality === "DEAD"
                     ? "border border-panel-line text-on-navy-muted hover:border-on-navy-faint hover:text-on-navy"
-                    : "bg-brand-bright text-white hover:bg-brand"
+                    : "bg-brand-bright text-navy hover:bg-brand"
                 }`}
               >
                 Open homepage
@@ -332,13 +330,7 @@ export default async function CompanyPage({
 
       <footer className="border-t border-line bg-surface">
         <div className="mx-auto max-w-[1120px] px-4 py-6 text-2xs leading-relaxed text-ink-muted sm:px-6">
-          <Image
-            src={wordmarkDark}
-            alt="VentureAtlas"
-            width={127}
-            height={16}
-            className="mb-4 h-4 w-auto"
-          />
+          <GlimpseLogo className="mb-4" />
           <p>
             Registry data from{" "}
             <a

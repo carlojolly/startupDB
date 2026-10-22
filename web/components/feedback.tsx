@@ -9,24 +9,6 @@ const IDLE: FeedbackState = { status: "idle" };
 
 export type FeedbackCompany = { name: string; codiceFiscale: string };
 
-function SpeechIcon() {
-  return (
-    <svg
-      aria-hidden
-      viewBox="0 0 14 14"
-      className="h-3.5 w-3.5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-    >
-      <path
-        d="M2.5 3.5h9a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H6l-2.5 2v-2h-1a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 /**
  * The panel is a separate component so that closing it unmounts the action
  * state: a note that was sent never greets the next person who opens the box.
@@ -110,7 +92,7 @@ function Panel({
       />
 
       {state.status === "error" ? (
-        <p role="alert" className="mt-2 text-2xs text-[#9b3448]">
+        <p role="alert" className="mt-2 text-2xs text-[#ff9d9d]">
           {state.error}
         </p>
       ) : null}
@@ -126,7 +108,7 @@ function Panel({
         <button
           type="submit"
           disabled={pending}
-          className="h-8 rounded-lg bg-brand px-3.5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-bright disabled:opacity-60"
+          className="h-8 rounded-lg bg-brand px-3.5 text-[13px] font-semibold text-navy transition-colors hover:bg-brand-bright disabled:opacity-60"
         >
           {pending ? "Sending…" : "Send"}
         </button>
@@ -166,13 +148,10 @@ export function Feedback({ company }: { company?: FeedbackCompany }) {
         type="button"
         onClick={() => setOpen((was) => !was)}
         aria-expanded={open}
-        className={`inline-flex h-8 items-center gap-2 rounded-full border px-3 text-[12px] font-medium transition-colors ${
-          open
-            ? "border-on-navy-faint bg-panel-raised text-on-navy"
-            : "border-panel-line bg-panel text-on-navy-muted hover:border-on-navy-faint hover:text-on-navy"
+        className={`min-h-9 px-2 text-xs transition-colors [@media(pointer:coarse)]:min-h-11 ${
+          open ? "text-on-navy" : "text-on-navy-muted hover:text-on-navy"
         }`}
       >
-        <SpeechIcon />
         Feedback
       </button>
 

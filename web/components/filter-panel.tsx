@@ -126,7 +126,7 @@ export function FilterPanel({
               </svg>
               {section.title}
               {selected.length > 0 ? (
-                <span className="tnum ml-auto rounded-full bg-brand px-1.5 py-px text-2xs font-semibold text-white">
+                <span className="tnum ml-auto rounded-full bg-brand px-1.5 py-px text-2xs font-semibold text-navy">
                   {selected.length}
                 </span>
               ) : null}
@@ -152,11 +152,11 @@ export function FilterPanel({
                         className={`mt-[2px] flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
                           isOn
                             ? "border-brand bg-brand"
-                            : "border-line-strong bg-white group-hover/opt:border-ink-faint"
+                            : "border-line-strong bg-panel group-hover/opt:border-ink-faint"
                         }`}
                       >
                         {isOn ? (
-                          <svg viewBox="0 0 12 12" className="h-2.5 w-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.4">
+                          <svg viewBox="0 0 12 12" className="h-2.5 w-2.5 text-navy" fill="none" stroke="currentColor" strokeWidth="2.4">
                             <path d="m2.5 6.2 2.4 2.4 4.6-5" strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
                         ) : null}

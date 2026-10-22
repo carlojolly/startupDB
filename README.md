@@ -414,9 +414,9 @@ to submit if the gate, prompts, models, source CSV, or request files changed.
 Model work is submitted in sequential 400-company parts so the job also fits
 lower-tier Batch queue limits.
 
-## The dashboard — VentureAtlas
+## The dashboard — Glimpse
 
-`web/` is **VentureAtlas**, the analyst-facing view of the database: search by company name,
+`web/` is **Glimpse**, the analyst-facing view of the database: search by company name,
 filter by VC relevance, sector, product type, customer model, location and
 homepage evidence, sort the list, and open a company to read its tags and the
 rationale behind them.
@@ -470,14 +470,16 @@ message that says what is missing.
 
 ### What it looks like
 
-Dark navy carries identity, navigation and search. The results surface below it
-stays light, because that is where dense small text has to stay readable. Blue
-is the interaction colour — active filters, buttons, focus rings. Amber is spent
-on exactly two things: the mark, and a `high` VC-relevance chip, so a shortlist
-is visible at a glance and nothing else competes with it. Companies have no
-logos in the registry and fetching favicons would hand every company's domain to
-a third party, so each row carries a tinted monogram derived from the registered
-name.
+Glimpse uses charcoal surfaces, white text and a yellow Glint mark. Urbanist
+provides the geometric wordmark and headings; Inter keeps dense company data
+readable. Yellow identifies selected controls and high VC signals; other labels
+stay neutral. Search and sorting remain within reach while scrolling, with a
+filter sidebar on desktop and a filter sheet on mobile. Company rows wrap their
+signals below the description on narrow screens. All filters remain in the URL.
+
+Companies have no logos in the registry, so rows use neutral initials derived
+from registered names without contacting external favicon services. AI-generated
+labels and their evidence remain visible on company profiles.
 
 ### What it is built on
 

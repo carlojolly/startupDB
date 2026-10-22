@@ -43,7 +43,7 @@ export function usePending(): boolean {
   );
 }
 
-/** A hairline of brand blue while the next page of results is on its way. */
+/** A hairline of brand yellow while the next page of results is on its way. */
 export function PendingBar() {
   const pending = usePending();
   return (

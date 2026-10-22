@@ -63,9 +63,9 @@ export function CompanyRow({ company, href }: { company: Company; href: string }
     <article className="border-b border-line last:border-b-0">
       <Link
         href={href}
-        className="flex items-start gap-3.5 px-4 py-4 transition-colors hover:bg-surface sm:px-6"
+        className="company-link items-start gap-3.5 px-4 py-5 transition-colors hover:bg-surface sm:px-6"
       >
-        <Monogram name={company.denominazione} seed={company.codice_fiscale} />
+        <Monogram name={company.denominazione} />
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -107,7 +107,7 @@ export function CompanyRow({ company, href }: { company: Company; href: string }
           ) : null}
         </div>
 
-        <div className="flex shrink-0 flex-col items-end gap-2 pt-0.5">
+        <div className="company-signals flex shrink-0 flex-col items-end gap-2 pt-0.5">
           <RelevanceChip value={company.vc_relevance} />
           <EvidenceMeter value={company.fetch_quality} />
         </div>

@@ -48,7 +48,7 @@ function Dismiss({ onClick, label }: { onClick: () => void; label: string }) {
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="flex h-4 w-4 items-center justify-center rounded-full text-brand/60 hover:bg-brand hover:text-white"
+      className="flex h-4 w-4 items-center justify-center rounded-full text-brand/60 hover:bg-brand hover:text-navy"
     >
       <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="m3 3 6 6M9 3l-6 6" strokeLinecap="round" />

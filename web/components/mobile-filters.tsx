@@ -40,7 +40,7 @@ export function MobileFilters({ regions }: { regions: string[] }) {
         </svg>
         Filters
         {active > 0 ? (
-          <span className="tnum rounded-full bg-brand px-1.5 py-px text-2xs font-semibold text-white">
+          <span className="tnum rounded-full bg-brand px-1.5 py-px text-2xs font-semibold text-navy">
             {active}
           </span>
         ) : null}

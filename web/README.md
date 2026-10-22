@@ -1,4 +1,4 @@
-# VentureAtlas — dashboard
+# Glimpse — dashboard
 
 The analyst-facing view of the Italian innovative-startup database. Read-only:
 it queries the same Postgres the Python pipeline writes to and changes nothing.
@@ -20,13 +20,11 @@ scripts use. Override it through the environment or `web/.env.local`.
 
 ## Design
 
-Dark navy carries identity, navigation and search; the data surface below stays
-light, because that is where dense small text lives. Blue is the interaction
-colour — active filters, buttons, focus. Amber is spent on exactly two things:
-the mark, and a `high` VC-relevance chip. Nothing else competes with it, so the
-shortlist is visible from across the room.
-
-Type is Plus Jakarta Sans for display (`.display`) and Inter for UI and data.
+Charcoal surfaces, white type and the yellow Glint symbol define Glimpse.
+Selected controls use yellow with dark text; other signals stay neutral.
+Urbanist Medium supplies the wordmark and display type, with Inter for UI and data.
+The directory keeps search and sorting sticky, collapses filters into a mobile
+sheet, and wraps row signals below company information on narrow screens.
 
 ## Layout
 
@@ -37,7 +35,7 @@ lib/db.ts             the one place that opens a connection
 lib/companies.ts      every SQL query the dashboard runs
 lib/model.ts          shapes and sort keys shared with client components
 lib/taxonomy.ts       the tag vocabularies, their labels and their order
-components/monogram.tsx  initials and tint for a company with no logo
+components/monogram.tsx  neutral initials for a company with no logo
 lib/search-params.ts  URL <-> filter state
 ```
 

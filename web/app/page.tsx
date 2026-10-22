@@ -1,7 +1,6 @@
-import Image from "next/image";
+import { GlimpseLogo } from "@/components/glimpse-logo";
 import Link from "next/link";
 import { Suspense } from "react";
-import wordmarkDark from "@/public/venture-atlas-dark.png";
 import { ActiveFilters } from "@/components/active-filters";
 import { CompanyRow } from "@/components/company-row";
 import { FilterPanel } from "@/components/filter-panel";
@@ -73,24 +72,22 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
     <div className="flex min-h-full flex-col">
       <SiteHeader />
 
-      {/* Masthead. Dark carries the identity and the search; the data below it
-          stays light, which is where dense small text has to be readable. */}
-      <section className="on-navy grid-field bg-navy text-on-navy">
-        <div className="mx-auto max-w-[1560px] px-4 pt-7 pb-6 sm:px-6 sm:pt-10 sm:pb-8">
+      {/* A short introduction keeps discovery and search close to the results. */}
+      <section className="on-navy bg-navy text-on-navy">
+        <div className="mx-auto max-w-[1560px] px-4 pt-7 pb-6 sm:px-6 sm:pt-12 sm:pb-10">
           <p className="eyebrow text-amber">
             Italian innovative-startup registry
           </p>
-          <h1 className="display mt-3 max-w-3xl text-[27px] leading-[1.1] sm:text-[44px] sm:leading-[1.08]">
-            Every innovative startup in Italy, read off its own homepage.
+          <h1 className="display mt-3 max-w-3xl text-[27px] leading-[1.1] sm:text-[48px] sm:leading-[1.08]">
+            Your next discovery starts here.
           </h1>
           <p className="mt-3 max-w-2xl text-[13.5px] leading-relaxed text-on-navy-muted sm:mt-4 sm:text-[15px]">
-            Sector, product, customer model and VC relevance, classified for the
-            whole registry — with the evidence each label was built on shown
-            next to it.
+            Explore Italy’s innovative startups. Search by name, narrow your focus,
+            and discover what each company is building.
           </p>
           <div className="mt-6 flex flex-wrap gap-x-8 gap-y-4 border-t border-panel-line pt-5 sm:mt-8 sm:gap-x-10 sm:gap-y-5 sm:pt-6">
-            <Stat value={overview.companies} label="Companies classified" />
-            <Stat value={overview.high} label="High VC relevance" />
+            <Stat value={overview.companies} label="Companies to explore" />
+            <Stat value={overview.high} label="High VC signal" />
             <Stat value={overview.verified} label="Homepages read in full" />
             <Stat value={overview.regions} label="Regions" />
           </div>
@@ -115,7 +112,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
       </div>
 
       <div className="mx-auto w-full max-w-[1560px] flex-1">
-        <div className="lg:grid lg:grid-cols-[288px_minmax(0,1fr)]">
+        <div className="lg:grid lg:grid-cols-[256px_minmax(0,1fr)]">
           <aside className="sticky top-[124px] hidden h-[calc(100dvh-124px)] overflow-y-auto border-r border-line px-5 lg:block">
             <Suspense>
               <FilterPanel regions={regions} />
@@ -181,7 +178,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                         ? "Try removing a filter, or widening the sector and product type."
                         : provenance
                           ? "The published tag run returned no companies."
-                          : "No tag run is published yet. Run scripts/publish_run.py --run-id N to choose one."}
+                          : "The directory is being prepared. Please check back soon."}
                   </p>
                 </div>
               )}
@@ -194,13 +191,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
 
       <footer className="border-t border-line bg-surface">
         <div className="mx-auto max-w-[1560px] px-4 py-8 text-2xs leading-relaxed text-ink-muted sm:px-6">
-          <Image
-            src={wordmarkDark}
-            alt="VentureAtlas"
-            width={127}
-            height={16}
-            className="mb-4 h-4 w-auto"
-          />
+          <GlimpseLogo className="mb-4" />
           <p className="max-w-3xl">
             Registry data from{" "}
             <a

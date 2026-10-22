@@ -11,14 +11,14 @@ const PILL =
   "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-2xs font-semibold tracking-[0.04em] uppercase";
 
 const RELEVANCE_LIGHT: Record<string, string> = {
-  high: "bg-amber text-ink",
-  medium: "bg-brand-wash text-brand ring-1 ring-inset ring-brand-line",
+  high: "bg-amber-wash text-amber ring-1 ring-inset ring-amber-line",
+  medium: "bg-surface-sunk text-ink-muted",
   low: "bg-surface-sunk text-ink-muted",
 };
 
 const RELEVANCE_DARK: Record<string, string> = {
-  high: "bg-amber text-ink",
-  medium: "bg-brand-bright/15 text-brand-bright ring-1 ring-inset ring-brand-bright/35",
+  high: "bg-amber-wash text-amber ring-1 ring-inset ring-amber-line",
+  medium: "bg-surface-sunk text-ink-muted",
   low: "bg-white/10 text-on-navy-muted ring-1 ring-inset ring-panel-line",
 };
 
@@ -129,7 +129,7 @@ export function TagPill({
     <span
       className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs ${
         emphasis
-          ? "bg-ink font-medium text-white"
+          ? "bg-surface-sunk font-medium text-ink"
           : "bg-surface text-ink-muted ring-1 ring-inset ring-line"
       }`}
     >

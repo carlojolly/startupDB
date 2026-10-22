@@ -46,9 +46,9 @@ export function SearchField() {
         type="search"
         value={value}
         onChange={(event) => setValue(event.target.value)}
-        placeholder="Search 9,620 companies by name"
+        placeholder="Search companies by name…"
         aria-label="Search by company name"
-        className="h-11 w-full rounded-lg border border-transparent bg-white pr-10 pl-10 text-sm text-ink shadow-sm placeholder:text-ink-faint focus:border-brand-bright focus:outline-none focus-visible:outline-none [&::-webkit-search-cancel-button]:hidden"
+        className="h-11 w-full rounded-lg border border-panel-line bg-panel pr-10 pl-10 text-sm text-ink placeholder:text-ink-faint focus:border-brand-bright focus:outline-none focus-visible:outline-none [&::-webkit-search-cancel-button]:hidden"
       />
       {value ? (
         <button

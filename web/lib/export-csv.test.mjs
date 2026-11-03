@@ -1,6 +1,26 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import Module from "node:module";
+import path from "node:path";
 import test from "node:test";
-import { companiesToCsv, EXPORT_COLUMNS } from "./export-csv.ts";
+import typescript from "typescript";
+import { fileURLToPath } from "node:url";
+
+// Transpile this one pure module in memory so the test also runs on Node 20,
+// the dashboard's documented minimum. No additional test runner is needed.
+const directory = path.dirname(fileURLToPath(import.meta.url));
+const filename = path.join(directory, "export-csv.ts");
+const { outputText } = typescript.transpileModule(readFileSync(filename, "utf8"), {
+  compilerOptions: {
+    module: typescript.ModuleKind.CommonJS,
+    target: typescript.ScriptTarget.ES2022,
+  },
+});
+const compiled = new Module(filename);
+compiled.filename = filename;
+compiled.paths = Module._nodeModulePaths(directory);
+compiled._compile(outputText, filename);
+const { companiesToCsv, EXPORT_COLUMNS } = compiled.exports;
 
 test("exports each company once with stable columns and spreadsheet-safe cells", () => {
   const company = Object.fromEntries(EXPORT_COLUMNS.map((column) => [column, null]));

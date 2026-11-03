@@ -463,6 +463,13 @@ The connection is opened on the first query rather than at import, so a build
 with no `DATABASE_URL` succeeds and the failure surfaces at request time with a
 message that says what is missing.
 
+The results header includes **Export CSV**. It exports all companies matching
+the current search and filters, in the selected sort order, regardless of the
+current page. The file includes the official registry identifier, location and
+website alongside the published AI tags and homepage evidence quality. Import
+`codice_fiscale` as text in spreadsheet software to preserve leading zeros.
+The download is read-only and uses the same published run as the dashboard.
+
 > **There is no authentication.** Anyone with the URL can read every company,
 > every label and every VC-relevance rationale in the current tag run. The
 > registry data is public; the classifications are not. Put the deployment

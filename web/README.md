@@ -45,5 +45,13 @@ truth for both display labels and sort order — the ranking arrays it exports
 are passed straight into SQL `array_position`, so the database sorts in exactly
 the order that file declares.
 
+The results header has an **Export CSV** button. It downloads every company
+matching the current search and filters in the current sort order, including
+results on later pages. The CSV includes the registry identifier, location,
+website, AI tags, VC signal and homepage evidence quality. It uses UTF-8 with a
+BOM; when opening it in a spreadsheet, import `codice_fiscale` as text to keep
+leading zeros. The server action shares the dashboard query and does not add a
+new API route. Run its offline CSV test with `npm test`.
+
 See the root README's "The dashboard" section for the data model and the
 decisions behind how `unclear` and homepage evidence are presented.

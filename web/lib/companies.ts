@@ -122,6 +122,20 @@ export async function searchCompanies(
   return { rows, total: rows.length ? Number(rows[0].total) : 0 };
 }
 
+/** The same filtered, sorted set as searchCompanies, without page limits. */
+export async function exportCompanies(
+  filters: Filters,
+  sort: SortKey,
+): Promise<Company[]> {
+  return sql<Company[]>`
+    ${tagged()}
+    SELECT company.*
+    FROM company
+    ${conditions(filters)}
+    ${ORDER_BY[sort]()}
+  `;
+}
+
 // Cached so the page and its generateMetadata share one round trip.
 export const getCompany = cache(
   async (codiceFiscale: string): Promise<Company | null> => {

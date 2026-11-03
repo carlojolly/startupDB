@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { ActiveFilters } from "@/components/active-filters";
 import { CompanyRow } from "@/components/company-row";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { FilterPanel } from "@/components/filter-panel";
 import { MobileFilters } from "@/components/mobile-filters";
 import { Pagination } from "@/components/pagination";
@@ -124,7 +125,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
               <ActiveFilters />
             </Suspense>
 
-            <div className="z-20 border-b border-line bg-page px-4 py-3.5 sm:px-6 lg:sticky lg:top-[124px]">
+            <div className="z-20 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-page px-4 py-3.5 sm:px-6 lg:sticky lg:top-[124px]">
               <p className="text-[13px]">
                 <span className="tnum display text-[15px]">
                   {total.toLocaleString("en-GB")}
@@ -135,6 +136,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                   · sorted by {SORTS[sort].toLowerCase()}
                 </span>
               </p>
+              <Suspense>
+                <ExportCsvButton count={total} />
+              </Suspense>
             </div>
 
             <PendingDim>

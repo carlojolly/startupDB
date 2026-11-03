@@ -1,7 +1,20 @@
 "use server";
 
 import { saveFeedback } from "@/lib/feedback";
+import { exportCompanies } from "@/lib/companies";
+import { companiesToCsv } from "@/lib/export-csv";
 import { MAX_FEEDBACK, type FeedbackState } from "@/lib/model";
+import { parseFilters, parseSort } from "@/lib/search-params";
+
+/** Export every match in the current published run; pagination is ignored. */
+export async function exportFilteredCompanies(query: string): Promise<string> {
+  if (typeof query !== "string" || query.length > 4096) {
+    throw new Error("The export filters are too long. Refresh and try again.");
+  }
+  const params = Object.fromEntries(new URLSearchParams(query));
+  const companies = await exportCompanies(parseFilters(params), parseSort(params));
+  return companiesToCsv(companies);
+}
 
 /**
  * Server action behind the header's feedback form. There is no API route and

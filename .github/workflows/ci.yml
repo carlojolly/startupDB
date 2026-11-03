@@ -36,6 +36,7 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      - run: npm test
       - run: npm run lint
       # next-env.d.ts and .next/types are generated and git-ignored; the
       # typecheck needs them, so generate them first (no build required).

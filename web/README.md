@@ -51,7 +51,7 @@ results on later pages. The CSV includes the registry identifier, location,
 website, AI tags, VC signal and homepage evidence quality. It uses UTF-8 with a
 BOM; when opening it in a spreadsheet, import `codice_fiscale` as text to keep
 leading zeros. The server action shares the dashboard query and does not add a
-new API route. Run its offline CSV test with `node --test lib/export-csv.test.mjs`.
+new API route. Run its offline CSV test with `npm test`.
 
 See the root README's "The dashboard" section for the data model and the
 decisions behind how `unclear` and homepage evidence are presented.

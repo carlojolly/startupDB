@@ -97,7 +97,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
 
       {/* Sticky command bar: reads as part of the masthead at rest, and stays
           within reach once the results scroll. */}
-      <div className="on-navy z-30 border-b border-panel-line bg-navy sm:sticky sm:top-14">
+      <div className="on-navy relative z-30 border-b border-panel-line bg-navy sm:sticky sm:top-14">
         <div className="mx-auto flex max-w-[1560px] flex-wrap items-center gap-2.5 px-4 py-3 sm:flex-nowrap sm:px-6">
           <Suspense>
             <div className="w-full min-w-0 sm:max-w-xl sm:flex-1">

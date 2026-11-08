@@ -30,6 +30,19 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 
+# ---- Design skills / Impeccable ----------------------------------------
+# Engine binaries are downloaded by `npx impeccable install`; keep skill text.
+**/.cursor/skills/impeccable/scripts/bin/
+**/.claude/skills/impeccable/scripts/bin/
+**/.agents/skills/impeccable/scripts/bin/
+**/.impeccable/config.local.json
+**/.impeccable/hook.cache.json
+**/.impeccable/hook.pending.json
+**/.impeccable/*.png
+**/.impeccable/review/
+**/.impeccable/questions/
+**/.impeccable/live/
+
 # ---- Editors / OS ------------------------------------------------------
 .DS_Store
 .vscode/

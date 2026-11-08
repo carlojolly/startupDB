@@ -47,12 +47,18 @@ export function usePending(): boolean {
 export function PendingBar() {
   const pending = usePending();
   return (
-    <span
-      aria-hidden
-      className={`pointer-events-none absolute inset-x-0 bottom-0 h-[2px] origin-left bg-brand-bright transition-opacity duration-150 ${
-        pending ? "opacity-100" : "opacity-0"
-      }`}
-    />
+    <>
+      <span
+        aria-hidden
+        className={`pointer-events-none absolute inset-x-0 bottom-0 h-[2px] origin-left bg-brand-bright transition-opacity duration-150 ${
+          pending ? "opacity-100" : "opacity-0"
+        }`}
+      />
+      {/* Visual bar is decorative; this status carries the same signal to AT. */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {pending ? "Updating company results" : ""}
+      </span>
+    </>
   );
 }
 

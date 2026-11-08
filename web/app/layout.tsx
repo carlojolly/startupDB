@@ -1,8 +1,17 @@
 import type { Metadata } from "next";
-import { Inter, Urbanist } from "next/font/google";
+import { Source_Sans_3, Urbanist } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ variable: "--font-inter", subsets: ["latin"], display: "swap" });
+/**
+ * UI body face for this Operate/Read directory: Source Sans 3 keeps dense
+ * company rows readable without Inter (anti.inter-everywhere) or other
+ * over-used "expressive" defaults Impeccable flags for brand faces.
+ */
+const sourceSans = Source_Sans_3({
+  variable: "--font-source-sans",
+  subsets: ["latin"],
+  display: "swap",
+});
 
 const urbanist = Urbanist({
   variable: "--font-urbanist",
@@ -18,7 +27,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${inter.variable} ${urbanist.variable} h-full antialiased`}>
+    <html
+      lang="en"
+      className={`${sourceSans.variable} ${urbanist.variable} h-full antialiased`}
+    >
       <body className="min-h-full bg-page text-ink">{children}</body>
     </html>
   );

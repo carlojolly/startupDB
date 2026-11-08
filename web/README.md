@@ -22,7 +22,7 @@ scripts use. Override it through the environment or `web/.env.local`.
 
 Charcoal surfaces, white type and the yellow Glint symbol define Glimpse.
 Selected controls use yellow with dark text; other signals stay neutral.
-Urbanist Medium supplies the wordmark and display type, with Inter for UI and data.
+Urbanist Medium supplies the wordmark and display type, with Source Sans 3 for UI and data.
 The directory keeps search and sorting sticky, collapses filters into a mobile
 sheet, and wraps row signals below company information on narrow screens.
 

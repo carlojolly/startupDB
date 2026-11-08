@@ -24,7 +24,7 @@ export function Pagination({
     withParams(params, { page: target === 1 ? null : String(target) });
 
   const step =
-    "flex h-9 items-center gap-1.5 rounded-lg border border-line bg-panel px-3 text-[13px] font-medium transition-colors hover:border-line-strong hover:bg-surface";
+    "flex h-9 items-center gap-1.5 border border-line bg-transparent px-3 mono text-[11px] font-semibold tracking-[0.1em] uppercase transition-colors hover:border-brand hover:text-brand";
 
   return (
     <nav

@@ -19,7 +19,7 @@ export function SortSelect() {
             patch({ sort: event.target.value === DEFAULT_SORT ? null : event.target.value })
           }
           aria-label="Sort companies"
-          className="h-11 w-full appearance-none rounded-lg border border-panel-line bg-panel py-0 pr-9 pl-3.5 text-sm text-on-navy hover:border-on-navy-faint focus:border-brand-bright focus:outline-none sm:w-auto"
+          className="h-11 w-full appearance-none border border-panel-line bg-panel py-0 pr-9 pl-3.5 text-sm text-on-navy hover:border-brand/50 focus:border-brand-bright focus:outline-none sm:w-auto"
         >
           {Object.entries(SORTS).map(([key, label]) => (
             <option key={key} value={key} className="text-ink">

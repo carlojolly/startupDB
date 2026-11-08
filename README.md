@@ -477,12 +477,12 @@ The download is read-only and uses the same published run as the dashboard.
 
 ### What it looks like
 
-Glimpse uses charcoal surfaces, white text and a yellow Glint mark. Urbanist
-provides the geometric wordmark and headings; Source Sans 3 keeps dense company
-data readable. Yellow identifies selected controls and high VC signals; other labels
-stay neutral. Search and sorting remain within reach while scrolling, with a
-filter sidebar on desktop and a filter sheet on mobile. Company rows wrap their
-signals below the description on narrow screens. All filters remain in the URL.
+Glimpse uses a night-atlas treatment: charcoal field, yellow Glint mark, grid
+atmosphere and square survey chrome. Urbanist is the wordmark/display face;
+Source Sans 3 carries UI copy; JetBrains Mono marks plate indexes and C.F.
+codes. Yellow is reserved for brand, focus, high VC signal and index ticks.
+Search is the hero instrument; sticky sort/filters stay in reach. All filters
+remain in the URL.
 
 Companies have no logos in the registry, so rows use neutral initials derived
 from registered names without contacting external favicon services. AI-generated

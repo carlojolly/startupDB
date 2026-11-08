@@ -58,7 +58,7 @@ function Dismiss({ onClick, label }: { onClick: () => void; label: string }) {
 }
 
 const CHIP =
-  "inline-flex items-center gap-1.5 rounded-md bg-brand-wash py-1 pr-1.5 pl-2.5 text-xs text-brand ring-1 ring-inset ring-brand-line";
+  "inline-flex items-center gap-1.5 border border-brand-line bg-brand-wash py-1 pr-1.5 pl-2.5 text-xs text-brand";
 
 /** Everything currently narrowing the list, each removable in one click. */
 export function ActiveFilters() {

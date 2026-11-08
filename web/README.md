@@ -20,11 +20,11 @@ scripts use. Override it through the environment or `web/.env.local`.
 
 ## Design
 
-Charcoal surfaces, white type and the yellow Glint symbol define Glimpse.
-Selected controls use yellow with dark text; other signals stay neutral.
-Urbanist Medium supplies the wordmark and display type, with Source Sans 3 for UI and data.
-The directory keeps search and sorting sticky, collapses filters into a mobile
-sheet, and wraps row signals below company information on narrow screens.
+**Night atlas** direction: charcoal field, yellow Glint mark and grid/index
+language. Urbanist for the wordmark and display type; Source Sans 3 for UI;
+JetBrains Mono for survey codes (C.F., plate indexes). Search is the hero
+instrument; company rows read as numbered plates; detail pages are dossiers
+with corner ticks. Sticky filters/sort remain; mobile uses a filter sheet.
 
 ## Layout
 

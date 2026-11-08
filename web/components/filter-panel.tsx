@@ -79,18 +79,18 @@ export function FilterPanel({
   return (
     <div className="pb-10">
       <div
-        className={`flex items-center gap-2 ${showTitle ? "h-12 justify-between border-b border-line" : "justify-end pt-3"}`}
+        className={`flex items-center gap-2 ${showTitle ? "h-14 justify-between border-b border-line" : "justify-end pt-3"}`}
       >
         {showTitle ? (
-          <h2 className="eyebrow text-ink-muted">Refine</h2>
+          <h2 className="eyebrow text-brand/80">Survey filters</h2>
         ) : null}
         {active > 0 ? (
           <button
             type="button"
             onClick={() => patch(Object.fromEntries(FILTER_KEYS.map((key) => [key, null])))}
-            className="text-xs font-medium text-brand hover:underline hover:underline-offset-2"
+            className="mono text-[10px] font-semibold tracking-[0.12em] text-brand uppercase hover:underline hover:underline-offset-4"
           >
-            Clear all ({active})
+            Clear ({active})
           </button>
         ) : null}
       </div>
@@ -126,7 +126,7 @@ export function FilterPanel({
               </svg>
               {section.title}
               {selected.length > 0 ? (
-                <span className="tnum ml-auto rounded-full bg-brand px-1.5 py-px text-2xs font-semibold text-navy">
+                <span className="tnum mono ml-auto border border-brand bg-brand px-1.5 py-px text-[10px] font-semibold text-navy">
                   {selected.length}
                 </span>
               ) : null}
@@ -149,10 +149,10 @@ export function FilterPanel({
                     >
                       <span
                         aria-hidden
-                        className={`mt-[2px] flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
+                        className={`mt-[2px] flex h-[15px] w-[15px] shrink-0 items-center justify-center border transition-colors ${
                           isOn
                             ? "border-brand bg-brand"
-                            : "border-line-strong bg-panel group-hover/opt:border-ink-faint"
+                            : "border-line-strong bg-transparent group-hover/opt:border-brand/60"
                         }`}
                       >
                         {isOn ? (

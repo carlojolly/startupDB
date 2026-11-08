@@ -33,14 +33,14 @@ export function MobileFilters({ regions }: { regions: string[] }) {
         type="button"
         onClick={() => setOpen(true)}
         aria-expanded={open}
-        className="flex h-11 flex-1 items-center justify-center gap-2 rounded-lg border border-panel-line bg-panel px-3.5 text-sm text-on-navy hover:border-on-navy-faint sm:flex-none lg:hidden"
+        className="flex h-11 flex-1 items-center justify-center gap-2 border border-panel-line bg-panel px-3.5 text-sm text-on-navy hover:border-brand/50 sm:flex-none lg:hidden"
       >
-        <svg aria-hidden viewBox="0 0 16 16" className="h-4 w-4 text-on-navy-muted" fill="none" stroke="currentColor" strokeWidth="1.7">
+        <svg aria-hidden viewBox="0 0 16 16" className="h-4 w-4 text-brand" fill="none" stroke="currentColor" strokeWidth="1.7">
           <path d="M2 4h12M4.5 8h7M7 12h2" strokeLinecap="round" />
         </svg>
         Filters
         {active > 0 ? (
-          <span className="tnum rounded-full bg-brand px-1.5 py-px text-2xs font-semibold text-navy">
+          <span className="tnum mono border border-brand bg-brand px-1.5 py-px text-[10px] font-semibold text-navy">
             {active}
           </span>
         ) : null}
@@ -59,7 +59,7 @@ export function MobileFilters({ regions }: { regions: string[] }) {
               />
               <div className="absolute inset-y-0 right-0 flex w-[min(340px,88vw)] flex-col bg-page shadow-2xl">
                 <div className="flex h-14 shrink-0 items-center justify-between border-b border-line px-4">
-                  <span className="display text-[15px]">Refine</span>
+                  <span className="eyebrow text-brand">Survey filters</span>
                   <button
                     type="button"
                     onClick={() => setOpen(false)}

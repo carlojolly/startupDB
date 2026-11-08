@@ -1,11 +1,9 @@
 /**
- * A neutral monogram in place of a logo. The registry has no company logos and
+ * A survey plate mark in place of a logo. The registry has no company logos and
  * fetching favicons would hand every company's domain to a third party, so the
  * initials are derived from the name the registry itself holds.
  */
 
-// Legal form and boilerplate. Registered names are full of it — "SOCIETA' A
-// RESPONSABILITA' LIMITATA SEMPLIFICATA" tells you nothing about the company.
 const NOISE = new Set([
   "SOCIETA",
   "RESPONSABILITA",
@@ -68,8 +66,6 @@ const NOISE = new Set([
 ]);
 
 function words(name: string): string[] {
-  // Registry names carry a boilerplate tail after "***" quoting the statute the
-  // company was incorporated under. Nothing before the marker is lost.
   return name
     .split("***")[0]
     .toUpperCase()
@@ -81,8 +77,6 @@ function words(name: string): string[] {
 
 export function initials(name: string): string {
   const all = words(name);
-  // Single characters are almost always the debris of a punctuated legal form
-  // ("S.R.L." -> S, R, L), so they never contribute an initial.
   const significant = all.filter((word) => word.length > 1 && !NOISE.has(word));
   const source = significant.length ? significant : all;
   if (!source.length) return "··";
@@ -99,13 +93,15 @@ export function Monogram({
 }) {
   const box =
     size === "lg"
-      ? "h-14 w-14 rounded-[12px] text-lg"
-      : "h-9 w-9 rounded-[8px] text-xs";
+      ? "h-16 w-16 text-xl"
+      : "h-11 w-11 text-[11px]";
   return (
     <span
       aria-hidden
-      className={`${box} bg-surface-sunk text-ink-muted ring-1 ring-inset ring-line flex shrink-0 items-center justify-center font-semibold tracking-tight select-none`}
+      className={`${box} relative flex shrink-0 items-center justify-center border border-line bg-navy font-semibold tracking-[0.08em] text-brand select-none`}
     >
+      <span className="atlas-corner atlas-corner-tl !w-2 !h-2" />
+      <span className="atlas-corner atlas-corner-br !w-2 !h-2" />
       {initials(name)}
     </span>
   );

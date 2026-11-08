@@ -18,12 +18,15 @@ Pipeline / DB hard rules live in **`AGENTS.md`** (uppercase). This file is the `
 
 | path | role | provenance_id | source |
 |------|------|---------------|--------|
-| `web/app/layout.tsx` | Root fonts (Urbanist display + Source Sans 3 UI) | anti.inter-everywhere | source:impeccable |
-| `web/app/globals.css` | Token system / focus / reduced motion | craft.tight-palette, a11y.baseline | source:our-skill |
-| `web/app/page.tsx` | Directory screen | workflow.screen-inventory | source:our-skill |
-| `web/components/pending.tsx` | In-flight list refresh feedback | a11y.baseline, checklist.unslop-20 §19 | source:our-skill |
-| `web/components/site-header.tsx` | Sticky chrome + feedback entry | craft.tight-palette | source:our-skill |
-| `web/components/company-row.tsx` | Result row (product surface) | craft.product-in-hero (directory-as-product) | source:our-skill |
+| `web/app/layout.tsx` | Root fonts (Urbanist + Source Sans 3 + JetBrains Mono) | anti.inter-everywhere | source:impeccable |
+| `web/app/globals.css` | Night-atlas tokens, grid field, motion | craft.tight-palette, motion.hero-entrance, a11y.baseline | source:our-skill |
+| `web/app/page.tsx` | Atlas hero + directory plate | craft.hero-composition, craft.product-in-hero | source:our-skill |
+| `web/app/company/[cf]/page.tsx` | Company dossier | craft.cta-hierarchy, anti.nested-cards | source:our-skill |
+| `web/components/search-field.tsx` | Hero + bar search instruments | craft.product-in-hero | source:our-skill |
+| `web/components/company-row.tsx` | Numbered survey plates | craft.tight-palette | source:our-skill |
+| `web/components/signals.tsx` | Square VC / evidence marks | anti.filler-badges | source:our-skill |
+| `web/components/pending.tsx` | In-flight list refresh feedback | a11y.baseline | source:our-skill |
+| `web/components/site-header.tsx` | Sticky atlas chrome | craft.tight-palette | source:our-skill |
 | `docs/screen-inventory.md` | Screen inventory | workflow.screen-inventory | source:our-skill |
 
 ## Agents may

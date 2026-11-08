@@ -38,7 +38,7 @@ export function ExportCsvButton({ count }: { count: number }) {
         onClick={download}
         disabled={pending || count === 0}
         aria-label={`Export ${count.toLocaleString("en-GB")} filtered companies as CSV`}
-        className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-xs font-semibold text-ink transition-colors hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex min-h-9 items-center gap-2 border border-line bg-transparent px-3 mono text-[10px] font-semibold tracking-[0.12em] text-ink uppercase transition-colors hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
       >
         <svg aria-hidden viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5">
           <path d="M8 2v8m0 0 3-3m-3 3L5 7M2.5 11.5v2h11v-2" strokeLinecap="round" strokeLinejoin="round" />

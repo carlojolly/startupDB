@@ -59,6 +59,8 @@ Trigger phrases: “remove this”, “never do that again”, “I don’t like
 ## Hard rules
 
 - Skip any provenance id with status `rejected`.
+- Honor `references/taste-memory.md` **Rejected** entries before inventing type or chrome.
+- Never use JetBrains Mono, Courier, Courier New, Cousine, or similar slab/typewriter monos for UI (`anti.typewriter-mono`).
 - Real product UI in heroes when the product has a UI; no abstract filler as the main visual.
 - One job per section; strong primary vs secondary CTA.
 - Cover loading, empty, and error states for interactive surfaces.

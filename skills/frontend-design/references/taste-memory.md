@@ -13,16 +13,8 @@ Agents must honor **Rejected** before applying any provenance id.
 
 ## Rejected
 
-_(none yet — when the user rejects a pattern, append here and set the provenance row to `rejected` or `replaced`)_
-
-<!-- Example:
-- 2026-11-08 — id:motion.animate-ui-opt-in misuse — disliked constant motion on form controls — action: keep Animate UI opt-in only; never auto-animate inputs — replaced_by: prim.input
--->
+- 2026-11-08 — id:`anti.typewriter-mono` — user rejected JetBrains Mono / typewriter–slab monospace on Glimpse chrome (“IT · INNOVATIVE STARTUPS” header label). **Never** use JetBrains Mono, Courier, Courier New, Cousine, or similar slab/typewriter monos for UI labels, eyebrows, nav meta, or “technical” atmosphere. Codes/IDs: use the UI sans with `tabular-nums` (+ modest tracking), not a mono face. — action: permanent ban in skill
 
 ## Replaced
 
-_(none yet)_
-
-<!-- Example:
-- 2026-11-08 — id:mock.glass-card — too much glass on marketing heroes — replaced_by: craft.hero-composition flat full-bleed photo heroes for place/service pages
--->
+- 2026-11-08 — Glimpse atlas plate/meta labels that used JetBrains Mono — replaced_by: Source Sans 3 (or project UI sans) with `.tnum` / tracking; provenance `anti.typewriter-mono`

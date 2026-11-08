@@ -38,6 +38,7 @@ When the user dislikes a pattern, resolve its `id`, then follow the taste-feedba
 | anti.purple-gradient-slop | Avoid generic purple-on-white / purple-indigo AI gradient themes | source:impeccable | design-checklist.md | — | active |
 | anti.filler-badges | Delete filler badges and redundant labels | source:user-notes | design-checklist.md | — | active |
 | anti.nested-cards | Avoid cards-in-cards and card spam in heroes | source:impeccable | ui-craft-patterns.md | — | active |
+| anti.typewriter-mono | Never use JetBrains Mono / Courier / Cousine / slab typewriter monos for UI chrome or “tech” atmosphere; prefer UI sans + tabular nums for codes | source:user-taste | design-checklist.md · taste-memory.md | decision.md | rejected |
 
 ## Source id legend
 

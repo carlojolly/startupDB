@@ -35,7 +35,6 @@
 
   --font-display: var(--font-urbanist), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-source-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
 
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
@@ -70,9 +69,12 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Plate / code labels: UI sans + tabular nums — never typewriter mono
+   (anti.typewriter-mono). Class name kept so call sites stay stable. */
 .mono {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
 }
 
 :focus-visible {

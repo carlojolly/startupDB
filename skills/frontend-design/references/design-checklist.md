@@ -41,3 +41,4 @@ Run before calling UI done. Mark each item.
 - [ ] Avoid Inter / Roboto / Arial as the only expressive brand face (`anti.inter-everywhere`).
 - [ ] Avoid purple-on-white / purple→indigo gradient defaults (`anti.purple-gradient-slop`).
 - [ ] Avoid nested cards and card spam in heroes (`anti.nested-cards`).
+- [ ] Avoid JetBrains Mono / Courier / Cousine / slab typewriter monos for labels or atmosphere (`anti.typewriter-mono` — status `rejected`; honor permanently).

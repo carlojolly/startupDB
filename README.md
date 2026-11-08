@@ -479,10 +479,10 @@ The download is read-only and uses the same published run as the dashboard.
 
 Glimpse uses a night-atlas treatment: charcoal field, yellow Glint mark, grid
 atmosphere and square survey chrome. Urbanist is the wordmark/display face;
-Source Sans 3 carries UI copy; JetBrains Mono marks plate indexes and C.F.
-codes. Yellow is reserved for brand, focus, high VC signal and index ticks.
-Search is the hero instrument; sticky sort/filters stay in reach. All filters
-remain in the URL.
+Source Sans 3 carries UI copy and plate/C.F. labels (tabular nums — typewriter
+monos are banned). Yellow is reserved for brand, focus, high VC signal and
+index ticks. Search is the hero instrument; sticky sort/filters stay in reach.
+All filters remain in the URL.
 
 Companies have no logos in the registry, so rows use neutral initials derived
 from registered names without contacting external favicon services. AI-generated

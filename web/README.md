@@ -21,8 +21,8 @@ scripts use. Override it through the environment or `web/.env.local`.
 ## Design
 
 **Night atlas** direction: charcoal field, yellow Glint mark and grid/index
-language. Urbanist for the wordmark and display type; Source Sans 3 for UI;
-JetBrains Mono for survey codes (C.F., plate indexes). Search is the hero
+language. Urbanist for the wordmark and display type; Source Sans 3 for UI
+and plate/code labels (tabular nums — no typewriter mono). Search is the hero
 instrument; company rows read as numbered plates; detail pages are dossiers
 with corner ticks. Sticky filters/sort remain; mobile uses a filter sheet.
 

@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono, Source_Sans_3, Urbanist } from "next/font/google";
+import { Source_Sans_3, Urbanist } from "next/font/google";
 import "./globals.css";
 
 /**
  * UI body for the Operate/Read directory. Source Sans 3 avoids Inter defaults;
- * Urbanist stays the brand/display face tied to the Glimpse wordmark;
- * JetBrains Mono is reserved for survey codes (C.F., run ids), not headlines.
+ * Urbanist stays the brand/display face tied to the Glimpse wordmark.
+ * No typewriter/slab mono (anti.typewriter-mono — permanently rejected).
  */
 const sourceSans = Source_Sans_3({
   variable: "--font-source-sans",
@@ -15,12 +15,6 @@ const sourceSans = Source_Sans_3({
 
 const urbanist = Urbanist({
   variable: "--font-urbanist",
-  subsets: ["latin"],
-  display: "swap",
-});
-
-const jetbrains = JetBrains_Mono({
-  variable: "--font-jetbrains",
   subsets: ["latin"],
   display: "swap",
 });
@@ -35,7 +29,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${sourceSans.variable} ${urbanist.variable} ${jetbrains.variable} h-full antialiased`}
+      className={`${sourceSans.variable} ${urbanist.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-page text-ink">{children}</body>
     </html>

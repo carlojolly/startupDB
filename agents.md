@@ -18,7 +18,7 @@ Pipeline / DB hard rules live in **`AGENTS.md`** (uppercase). This file is the `
 
 | path | role | provenance_id | source |
 |------|------|---------------|--------|
-| `web/app/layout.tsx` | Root fonts (Urbanist + Source Sans 3 + JetBrains Mono) | anti.inter-everywhere | source:impeccable |
+| `web/app/layout.tsx` | Root fonts (Urbanist + Source Sans 3; no typewriter mono) | anti.inter-everywhere, anti.typewriter-mono | source:impeccable / source:user-taste |
 | `web/app/globals.css` | Night-atlas tokens, grid field, motion | craft.tight-palette, motion.hero-entrance, a11y.baseline | source:our-skill |
 | `web/app/page.tsx` | Atlas hero + directory plate | craft.hero-composition, craft.product-in-hero | source:our-skill |
 | `web/app/company/[cf]/page.tsx` | Company dossier | craft.cta-hierarchy, anti.nested-cards | source:our-skill |
